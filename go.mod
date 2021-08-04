@@ -6,6 +6,7 @@ replace k8s.io/client-go => k8s.io/client-go v0.18.0
 
 require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
+	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
 	github.com/prometheus/common v0.30.0
 	github.com/sirupsen/logrus v1.6.0

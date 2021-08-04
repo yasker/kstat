@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 
@@ -15,14 +16,6 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/yasker/kstat/pkg/version"
-)
-
-type OverviewType string
-type Overview map[OverviewType]int
-
-const (
-	OverviewTypeTotal   = OverviewType("total")
-	OverviewTypeAverage = OverviewType("avg")
 )
 
 type CPUMode string
@@ -35,38 +28,111 @@ const (
 	CPUModeSteal  = CPUMode("steal")
 )
 
-type CPUIndex string
+// ClusterMetric use the instance name as the key
+type ClusterMetric map[string]*InstanceMetric
 
-type NodeCPU map[CPUMode]NodeCPUMode
-type NodeCPUMode map[CPUIndex]int
-type OverviewNodeCPU map[CPUMode]Overview
+type InstanceMetric struct {
+	// DeviceMetrics use the device name as the key
+	DeviceMetrics map[string]int
+	Total         int
+	Average       int
 
-type DiskIOType string
+	Value int
+}
 
-const (
-	DiskIOTypeRead  = DiskIOType("read")
-	DiskIOTypeWrite = DiskIOType("write")
-)
-
-type DiskDevice string
-type NodeDisk map[DiskIOType]NodeDiskIO
-type NodeDiskIO map[DiskDevice]int
-type OverviewNodeDisk map[DiskIOType]Overview
-
-type NetworkIOType string
+type MetricType string
 
 const (
-	NetworkIOTypeReceive  = NetworkIOType("receive")
-	NetworkIOTypeTransmit = NetworkIOType("transmit")
+	MetricTypeDiskRead        = MetricType("disk-read")
+	MetricTypeDiskWrite       = MetricType("disk-write")
+	MetricTypeNetworkReceive  = MetricType("network-receive")
+	MetricTypeNetworkTransmit = MetricType("network-transmit")
+	MetricTypeCPUUser         = MetricType("cpu-user")
+	MetricTypeCPUSystem       = MetricType("cpu-system")
+	MetricTypeCPUIdle         = MetricType("cpu-idle")
+	MetricTypeCPUWait         = MetricType("cpu-wait")
+	MetricTypeCPUSteal        = MetricType("cpu-steal")
+	MetricTypeMemAvailable    = MetricType("mem-avail")
 )
 
-type NetworkDevice string
-type NodeNetwork map[NetworkIOType]NodeNetworkIO
-type NodeNetworkIO map[NetworkDevice]int
-type OverviewNodeNetwork map[NetworkIOType]Overview
+const (
+	InstanceLabel = model.LabelName("instance")
+)
+
+type MetricConfig struct {
+	Type        MetricType
+	DeviceLabel model.LabelName
+	QueryString string
+	Scale       float64
+}
 
 const (
 	SampleInterval = "10s"
+)
+
+var (
+	MetricConfigMap = map[MetricType]*MetricConfig{
+		MetricTypeDiskRead: {
+			Type:        MetricTypeDiskRead,
+			QueryString: fmt.Sprintf("rate(node_disk_read_bytes_total{job=\"node-exporter\"}[%s])", SampleInterval),
+			DeviceLabel: model.LabelName("device"),
+			Scale:       1,
+		},
+		MetricTypeDiskWrite: {
+			Type:        MetricTypeDiskWrite,
+			QueryString: fmt.Sprintf("rate(node_disk_written_bytes_total{job=\"node-exporter\"}[%s])", SampleInterval),
+			DeviceLabel: model.LabelName("device"),
+			Scale:       1,
+		},
+		MetricTypeNetworkReceive: {
+			Type:        MetricTypeNetworkReceive,
+			QueryString: fmt.Sprintf("rate(node_network_receive_bytes_total{job=\"node-exporter\"}[%s])", SampleInterval),
+			DeviceLabel: model.LabelName("device"),
+			Scale:       1,
+		},
+		MetricTypeNetworkTransmit: {
+			Type:        MetricTypeNetworkTransmit,
+			QueryString: fmt.Sprintf("rate(node_network_transmit_bytes_total{job=\"node-exporter\"}[%s])", SampleInterval),
+			DeviceLabel: model.LabelName("device"),
+			Scale:       1,
+		},
+		MetricTypeCPUUser: {
+			Type:        MetricTypeCPUUser,
+			QueryString: fmt.Sprintf("rate(node_cpu_seconds_total{job=\"node-exporter\", mode=\"%s\"}[%s])", CPUModeUser, SampleInterval),
+			DeviceLabel: model.LabelName("cpu"),
+			Scale:       100,
+		},
+		MetricTypeCPUSystem: {
+			Type:        MetricTypeCPUSystem,
+			QueryString: fmt.Sprintf("rate(node_cpu_seconds_total{job=\"node-exporter\", mode=\"%s\"}[%s])", CPUModeSystem, SampleInterval),
+			DeviceLabel: model.LabelName("cpu"),
+			Scale:       100,
+		},
+		MetricTypeCPUIdle: {
+			Type:        MetricTypeCPUIdle,
+			QueryString: fmt.Sprintf("rate(node_cpu_seconds_total{job=\"node-exporter\", mode=\"%s\"}[%s])", CPUModeIdle, SampleInterval),
+			DeviceLabel: model.LabelName("cpu"),
+			Scale:       100,
+		},
+		MetricTypeCPUWait: {
+			Type:        MetricTypeCPUWait,
+			QueryString: fmt.Sprintf("rate(node_cpu_seconds_total{job=\"node-exporter\", mode=\"%s\"}[%s])", CPUModeWait, SampleInterval),
+			DeviceLabel: model.LabelName("cpu"),
+			Scale:       100,
+		},
+		MetricTypeCPUSteal: {
+			Type:        MetricTypeCPUSteal,
+			QueryString: fmt.Sprintf("rate(node_cpu_seconds_total{job=\"node-exporter\", mode=\"%s\"}[%s])", CPUModeSteal, SampleInterval),
+			DeviceLabel: model.LabelName("cpu"),
+			Scale:       100,
+		},
+		MetricTypeMemAvailable: {
+			Type:        MetricTypeMemAvailable,
+			QueryString: fmt.Sprintf("node_memory_MemAvailable_bytes{job=\"node-exporter\"}"),
+			DeviceLabel: "",
+			Scale:       1,
+		},
+	}
 )
 
 func main() {
@@ -108,106 +174,39 @@ func query(client promv1.API, ctx context.Context, queryString string) (model.Ve
 	return vector, nil
 }
 
-func getCPUMetrics(client promv1.API, ctx context.Context, interval string) (report map[string]NodeCPU, overview map[string]OverviewNodeCPU) {
-	report = map[string]NodeCPU{}
-	overview = map[string]OverviewNodeCPU{}
-
-	vector, err := query(client, ctx, fmt.Sprintf("rate(node_cpu_seconds_total{job=\"node-exporter\"}[%s])", interval))
+func getClusterMetric(client promv1.API, ctx context.Context, cfg *MetricConfig) (*ClusterMetric, error) {
+	vector, err := query(client, ctx, cfg.QueryString)
 	if err != nil {
-		logrus.Errorf("failed to get CPU metrics: %v", err)
-		return
+		return nil, errors.Wrapf(err, "failed to get metric for %v", cfg.Type)
 	}
 
+	report := ClusterMetric{}
 	for _, s := range vector {
-		inst := string(s.Metric["instance"])
-		cpu := CPUIndex(s.Metric["cpu"])
-		mode := CPUMode(s.Metric["mode"])
+		inst := string(s.Metric[InstanceLabel])
+		dev := ""
 		if report[inst] == nil {
-			report[inst] = map[CPUMode]NodeCPUMode{}
+			report[inst] = &InstanceMetric{}
 		}
-		if report[inst][mode] == nil {
-			report[inst][mode] = map[CPUIndex]int{}
-		}
-		report[inst][mode][cpu] = int(s.Value * 100)
-	}
-
-	for inst := range report {
-		overview[inst] = map[CPUMode]Overview{}
-		for mode := range report[inst] {
-			overview[inst][mode] = Overview{}
-			for cpu := range report[inst][mode] {
-				overview[inst][mode][OverviewTypeTotal] += report[inst][mode][cpu]
+		if cfg.DeviceLabel != "" {
+			dev = string(s.Metric[cfg.DeviceLabel])
+			if report[inst].DeviceMetrics == nil {
+				report[inst].DeviceMetrics = map[string]int{}
 			}
-			overview[inst][mode][OverviewTypeAverage] = overview[inst][mode][OverviewTypeTotal] / len(report[inst][mode])
+			report[inst].DeviceMetrics[dev] = int(float64(s.Value) * cfg.Scale)
+		} else {
+			report[inst].Value = int(float64(s.Value) * cfg.Scale)
 		}
 	}
-
-	for inst := range overview {
-		for mode := range overview[inst] {
-			fmt.Printf("instance %s mode %s: total %d%%, average %d%%\n", inst, mode,
-				overview[inst][mode][OverviewTypeTotal], overview[inst][mode][OverviewTypeAverage])
-		}
-	}
-	return
-}
-
-func getDiskMetrics(client promv1.API, ctx context.Context, interval string) (report map[string]NodeDisk, overview map[string]OverviewNodeDisk) {
-	report = map[string]NodeDisk{}
-	overview = map[string]OverviewNodeDisk{}
-
-	vector, err := query(client, ctx, fmt.Sprintf("rate(node_disk_read_bytes_total{job=\"node-exporter\"}[%s])", interval))
-	if err != nil {
-		logrus.Errorf("failed to get disk read metrics: %v", err)
-		return
-	}
-
-	for _, s := range vector {
-		inst := string(s.Metric["instance"])
-		dev := DiskDevice(s.Metric["device"])
-		if report[inst] == nil {
-			report[inst] = map[DiskIOType]NodeDiskIO{}
-		}
-		if report[inst][DiskIOTypeRead] == nil {
-			report[inst][DiskIOTypeRead] = map[DiskDevice]int{}
-		}
-		report[inst][DiskIOTypeRead][dev] = int(s.Value)
-	}
-
-	vector, err = query(client, ctx, fmt.Sprintf("rate(node_disk_written_bytes_total{job=\"node-exporter\"}[%s])", interval))
-	if err != nil {
-		logrus.Errorf("failed to get disk write metrics: %v", err)
-		return
-	}
-
-	for _, s := range vector {
-		inst := string(s.Metric["instance"])
-		dev := DiskDevice(s.Metric["device"])
-		if report[inst] == nil {
-			report[inst] = map[DiskIOType]NodeDiskIO{}
-		}
-		if report[inst][DiskIOTypeWrite] == nil {
-			report[inst][DiskIOTypeWrite] = map[DiskDevice]int{}
-		}
-		report[inst][DiskIOTypeWrite][dev] = int(s.Value)
-	}
-
-	for inst := range report {
-		overview[inst] = map[DiskIOType]Overview{}
-		for t := range report[inst] {
-			overview[inst][t] = Overview{}
-			for dev := range report[inst][t] {
-				overview[inst][t][OverviewTypeTotal] += report[inst][t][dev]
+	for _, m := range report {
+		devCount := len(m.DeviceMetrics)
+		if devCount != 0 {
+			for _, v := range m.DeviceMetrics {
+				m.Total += v
 			}
-			// Doesn't make sense to calculate the average for disk throughput, skip it
+			m.Average = m.Total / devCount
 		}
 	}
-	for inst := range overview {
-		for t := range overview[inst] {
-			fmt.Printf("instance %s disk IO type %s: total %d bytes/sec\n", inst, t,
-				overview[inst][t][OverviewTypeTotal])
-		}
-	}
-	return
+	return &report, nil
 }
 
 func startServer(c *cli.Context) error {
@@ -227,11 +226,29 @@ func startServer(c *cli.Context) error {
 	pollInterval := 5 * time.Second
 
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
 
-		getCPUMetrics(api, ctx, SampleInterval)
-		getDiskMetrics(api, ctx, SampleInterval)
+		metrics := map[MetricType]*ClusterMetric{}
+
+		for k, c := range MetricConfigMap {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			cm, err := getClusterMetric(api, ctx, c)
+			if err != nil {
+				logrus.Errorf("failed to get metric for %v: %v", k, err)
+				continue
+			}
+			metrics[k] = cm
+
+			fmt.Printf("type: %v\n", k)
+			for i, im := range *cm {
+				fmt.Printf("instance %s: total %d, average %d, value %d\n", i,
+					im.Total, im.Average, im.Value)
+				for d, v := range im.DeviceMetrics {
+					fmt.Printf("device %s: value %d\n", d, v)
+				}
+			}
+		}
 
 		time.Sleep(pollInterval)
 	}
