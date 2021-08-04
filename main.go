@@ -5,8 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
 	"time"
 
+	"code.cloudfoundry.org/bytefmt"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
@@ -33,11 +35,12 @@ type ClusterMetric map[string]*InstanceMetric
 
 type InstanceMetric struct {
 	// DeviceMetrics use the device name as the key
-	DeviceMetrics map[string]int
-	Total         int
-	Average       int
+	DeviceMetrics map[string]int64
+	Total         int64
+	Average       int64
 
-	Value int
+	// Value stores the metric value if there is no associated device
+	Value int64
 }
 
 type MetricType string
@@ -190,15 +193,15 @@ func getClusterMetric(client promv1.API, ctx context.Context, cfg *MetricConfig)
 		if cfg.DeviceLabel != "" {
 			dev = string(s.Metric[cfg.DeviceLabel])
 			if report[inst].DeviceMetrics == nil {
-				report[inst].DeviceMetrics = map[string]int{}
+				report[inst].DeviceMetrics = map[string]int64{}
 			}
-			report[inst].DeviceMetrics[dev] = int(float64(s.Value) * cfg.Scale)
+			report[inst].DeviceMetrics[dev] = int64(float64(s.Value) * cfg.Scale)
 		} else {
-			report[inst].Value = int(float64(s.Value) * cfg.Scale)
+			report[inst].Value = int64(float64(s.Value) * cfg.Scale)
 		}
 	}
 	for _, m := range report {
-		devCount := len(m.DeviceMetrics)
+		devCount := int64(len(m.DeviceMetrics))
 		if devCount != 0 {
 			for _, v := range m.DeviceMetrics {
 				m.Total += v
@@ -211,7 +214,6 @@ func getClusterMetric(client promv1.API, ctx context.Context, cfg *MetricConfig)
 
 func startServer(c *cli.Context) error {
 	flag.Parse()
-	logrus.Info("kstat starts")
 
 	server := "http://localhost:9090"
 	client, err := promapi.NewClient(promapi.Config{
@@ -239,18 +241,45 @@ func startServer(c *cli.Context) error {
 				continue
 			}
 			metrics[k] = cm
-
-			fmt.Printf("type: %v\n", k)
-			for i, im := range *cm {
-				fmt.Printf("instance %s: total %d, average %d, value %d\n", i,
-					im.Total, im.Average, im.Value)
-				for d, v := range im.DeviceMetrics {
-					fmt.Printf("device %s: value %d\n", d, v)
-				}
-			}
 		}
+
+		printMetrics(metrics)
 
 		time.Sleep(pollInterval)
 	}
 	return nil
+}
+
+func printMetrics(metrics map[MetricType]*ClusterMetric) {
+	instanceList := []string{}
+
+	// choose a random one to get the instance list
+	for inst := range *metrics[MetricTypeCPUIdle] {
+		instanceList = append(instanceList, inst)
+	}
+	sort.Strings(instanceList)
+
+	header := fmt.Sprintf("%20s : %24s | %7s | %15s | %15s\n",
+		"", "----------cpu----------", "--mem--", "-----disk-----", "---network---")
+	subheader := fmt.Sprintf("%20s : %4s %4s %4s %4s %4s | %7s | %7s %7s | %7s %7s\n",
+		"instance", "usr", "sys", "idl", "wai", "stl", "avail", "read", "write", "recv", "send")
+	output := ""
+	for _, inst := range instanceList {
+		output += fmt.Sprintf("%20s : %3d%% %3d%% %3d%% %3d%% %3d%% | %7s | %7s %7s | %7s %7s\n",
+			inst,
+			(*metrics[MetricTypeCPUUser])[inst].Average,
+			(*metrics[MetricTypeCPUSystem])[inst].Average,
+			(*metrics[MetricTypeCPUIdle])[inst].Average,
+			(*metrics[MetricTypeCPUWait])[inst].Average,
+			(*metrics[MetricTypeCPUSteal])[inst].Average,
+			bytefmt.ByteSize(uint64((*metrics[MetricTypeMemAvailable])[inst].Value)),
+			bytefmt.ByteSize(uint64((*metrics[MetricTypeDiskRead])[inst].Total)),
+			bytefmt.ByteSize(uint64((*metrics[MetricTypeDiskWrite])[inst].Total)),
+			bytefmt.ByteSize(uint64((*metrics[MetricTypeNetworkReceive])[inst].Total)),
+			bytefmt.ByteSize(uint64((*metrics[MetricTypeNetworkTransmit])[inst].Total)))
+	}
+
+	fmt.Print(header)
+	fmt.Print(subheader)
+	fmt.Print(output)
 }
