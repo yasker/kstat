@@ -13,6 +13,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 
+	aurora "github.com/logrusorgru/aurora/v3"
+
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
@@ -265,21 +267,49 @@ func printMetrics(metrics map[MetricType]*ClusterMetric) {
 		"instance", "usr", "sys", "idl", "wai", "stl", "avail", "read", "write", "recv", "send")
 	output := ""
 	for _, inst := range instanceList {
-		output += fmt.Sprintf("%20s : %3d%% %3d%% %3d%% %3d%% %3d%% | %7s | %7s %7s | %7s %7s\n",
+		output += fmt.Sprintf("%20s : %s %s %s %s %s | %s | %s %s | %s %s\n",
 			inst,
-			(*metrics[MetricTypeCPUUser])[inst].Average,
-			(*metrics[MetricTypeCPUSystem])[inst].Average,
-			(*metrics[MetricTypeCPUIdle])[inst].Average,
-			(*metrics[MetricTypeCPUWait])[inst].Average,
-			(*metrics[MetricTypeCPUSteal])[inst].Average,
-			bytefmt.ByteSize(uint64((*metrics[MetricTypeMemAvailable])[inst].Value)),
-			bytefmt.ByteSize(uint64((*metrics[MetricTypeDiskRead])[inst].Total)),
-			bytefmt.ByteSize(uint64((*metrics[MetricTypeDiskWrite])[inst].Total)),
-			bytefmt.ByteSize(uint64((*metrics[MetricTypeNetworkReceive])[inst].Total)),
-			bytefmt.ByteSize(uint64((*metrics[MetricTypeNetworkTransmit])[inst].Total)))
+			colorCPU("%4d", (*metrics[MetricTypeCPUUser])[inst].Average),
+			colorCPU("%4d", (*metrics[MetricTypeCPUSystem])[inst].Average),
+			colorCPU("%4d", (*metrics[MetricTypeCPUIdle])[inst].Average),
+			colorCPU("%4d", (*metrics[MetricTypeCPUWait])[inst].Average),
+			colorCPU("%4d", (*metrics[MetricTypeCPUSteal])[inst].Average),
+			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricTypeMemAvailable])[inst].Value))),
+			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricTypeDiskRead])[inst].Total))),
+			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricTypeDiskWrite])[inst].Total))),
+			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricTypeNetworkReceive])[inst].Total))),
+			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricTypeNetworkTransmit])[inst].Total))))
 	}
 
 	fmt.Print(header)
 	fmt.Print(subheader)
 	fmt.Print(output)
+}
+
+// output should be %4d
+func colorCPU(format string, percentage int64) string {
+	if percentage <= 0 {
+		return aurora.Sprintf(aurora.Gray(10, format), percentage)
+	} else if percentage < 33 {
+		return aurora.Sprintf(aurora.Red(format), percentage)
+	} else if percentage < 66 {
+		return aurora.Sprintf(aurora.Yellow(format), percentage)
+	} else if percentage < 99 {
+		return aurora.Sprintf(aurora.Green(format), percentage)
+	}
+	return aurora.Sprintf(aurora.BrightWhite(format), percentage)
+}
+
+// output should be %7s
+func colorSize(format, byteString string) string {
+	unit := byteString[len(byteString)-1]
+	switch unit {
+	case 'B':
+		return aurora.Sprintf(aurora.Red(format), byteString)
+	case 'K':
+		return aurora.Sprintf(aurora.Yellow(format), byteString)
+	case 'M':
+		return aurora.Sprintf(aurora.Green(format), byteString)
+	}
+	return aurora.Sprintf(aurora.BrightWhite(format), byteString)
 }
