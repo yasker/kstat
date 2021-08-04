@@ -13,4 +13,5 @@ require (
 	github.com/prometheus/common v0.30.0
 	github.com/sirupsen/logrus v1.6.0
 	github.com/urfave/cli v1.22.2
+	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 )

@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"code.cloudfoundry.org/bytefmt"
+	aurora "github.com/logrusorgru/aurora/v3"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
-
-	aurora "github.com/logrusorgru/aurora/v3"
+	"golang.org/x/crypto/ssh/terminal"
 
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -229,8 +229,9 @@ func startServer(c *cli.Context) error {
 	api := promv1.NewAPI(client)
 	pollInterval := 5 * time.Second
 
+	counter := new(int)
+	*counter = 0
 	for {
-
 		metrics := map[MetricType]*ClusterMetric{}
 
 		for k, c := range MetricConfigMap {
@@ -245,14 +246,15 @@ func startServer(c *cli.Context) error {
 			metrics[k] = cm
 		}
 
-		printMetrics(metrics)
+		printMetrics(metrics, counter)
 
+		*counter++
 		time.Sleep(pollInterval)
 	}
 	return nil
 }
 
-func printMetrics(metrics map[MetricType]*ClusterMetric) {
+func printMetrics(metrics map[MetricType]*ClusterMetric, counter *int) {
 	instanceList := []string{}
 
 	// choose a random one to get the instance list
@@ -281,12 +283,13 @@ func printMetrics(metrics map[MetricType]*ClusterMetric) {
 			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricTypeNetworkTransmit])[inst].Total))))
 	}
 
-	fmt.Print(header)
-	fmt.Print(subheader)
+	if needHeader(counter) {
+		fmt.Print(header)
+		fmt.Print(subheader)
+	}
 	fmt.Print(output)
 }
 
-// output should be %4d
 func colorCPU(format string, percentage int64) string {
 	if percentage <= 0 {
 		return aurora.Sprintf(aurora.Gray(10, format), percentage)
@@ -300,8 +303,11 @@ func colorCPU(format string, percentage int64) string {
 	return aurora.Sprintf(aurora.BrightWhite(format), percentage)
 }
 
-// output should be %7s
 func colorSize(format, byteString string) string {
+	if byteString == "0B" {
+		return aurora.Sprintf(aurora.Gray(10, format), byteString)
+	}
+
 	unit := byteString[len(byteString)-1]
 	switch unit {
 	case 'B':
@@ -312,4 +318,21 @@ func colorSize(format, byteString string) string {
 		return aurora.Sprintf(aurora.Green(format), byteString)
 	}
 	return aurora.Sprintf(aurora.BrightWhite(format), byteString)
+}
+
+func needHeader(counter *int) bool {
+	_, termHeight, err := terminal.GetSize(0)
+	if err != nil {
+		logrus.Warnf("Failed to get terminal size: %v", err)
+		return true
+	}
+	if *counter == 0 {
+		return true
+	}
+	// count in the header
+	if *counter >= termHeight-2 {
+		*counter = 0
+		return true
+	}
+	return false
 }
