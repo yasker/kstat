@@ -140,22 +140,40 @@ var (
 	}
 )
 
+const (
+	FlagPrometheusServer = "prom-server"
+)
+
+func ServerCmd() cli.Command {
+	return cli.Command{
+		Name: "server",
+		Flags: []cli.Flag{
+			cli.StringFlag{
+				Name:  FlagPrometheusServer,
+				Usage: "Specify the Prometheus Server address",
+				Value: "http://localhost:9090",
+			},
+		},
+		Action: func(c *cli.Context) {
+			if err := startServer(c); err != nil {
+				logrus.Fatalf("Error starting kstat server: %v", err)
+			}
+		},
+	}
+}
+
 func main() {
 	app := cli.NewApp()
 	app.Name = "kstat"
 	app.Version = version.FriendlyVersion()
 	app.Usage = "dstat for Kubernetes"
 	app.Flags = []cli.Flag{}
-	app.Action = run
+	app.Commands = []cli.Command{
+		ServerCmd(),
+	}
 
 	if err := app.Run(os.Args); err != nil {
 		logrus.Fatal(err)
-	}
-}
-
-func run(c *cli.Context) {
-	if err := startServer(c); err != nil {
-		logrus.Fatalf("Error starting server: %v", err)
 	}
 }
 
@@ -214,20 +232,34 @@ func getClusterMetric(client promv1.API, ctx context.Context, cfg *MetricConfig)
 	return &report, nil
 }
 
+func testConnection(client promv1.API) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := query(client, ctx, "up")
+	return err
+}
+
 func startServer(c *cli.Context) error {
 	flag.Parse()
 
-	server := "http://localhost:9090"
+	server := c.String(FlagPrometheusServer)
 	client, err := promapi.NewClient(promapi.Config{
 		Address: server,
 	})
 	if err != nil {
-		logrus.Errorf("Error connecting to %s: %v", server, err)
+		logrus.Errorf("Error start client to %s: %v", server, err)
 		return err
 	}
 
 	api := promv1.NewAPI(client)
 	pollInterval := 5 * time.Second
+
+	if err := testConnection(api); err != nil {
+		logrus.Errorf("Error connecting to %s: %v", server, err)
+		return err
+
+	}
 
 	counter := new(int)
 	*counter = 0
@@ -323,7 +355,7 @@ func colorSize(format, byteString string) string {
 func needHeader(counter *int) bool {
 	_, termHeight, err := terminal.GetSize(0)
 	if err != nil {
-		logrus.Warnf("Failed to get terminal size: %v", err)
+		//logrus.Warnf("Failed to get terminal size: %v", err)
 		return true
 	}
 	if *counter == 0 {
