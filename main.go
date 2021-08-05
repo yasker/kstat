@@ -240,6 +240,22 @@ func testConnection(client promv1.API) error {
 	return err
 }
 
+func getMetrics(client promv1.API) (map[MetricType]*ClusterMetric, error) {
+	metrics := map[MetricType]*ClusterMetric{}
+
+	for k, c := range MetricConfigMap {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		cm, err := getClusterMetric(client, ctx, c)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get metric for %v", k)
+		}
+		metrics[k] = cm
+	}
+	return metrics, nil
+}
+
 func startServer(c *cli.Context) error {
 	flag.Parse()
 
@@ -261,38 +277,40 @@ func startServer(c *cli.Context) error {
 
 	}
 
-	counter := new(int)
-	*counter = 0
+	lineCounter := new(int)
+	*lineCounter = 0
 	for {
-		metrics := map[MetricType]*ClusterMetric{}
-
-		for k, c := range MetricConfigMap {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-
-			cm, err := getClusterMetric(api, ctx, c)
-			if err != nil {
-				logrus.Errorf("failed to get metric for %v: %v", k, err)
-				continue
-			}
-			metrics[k] = cm
+		metrics, err := getMetrics(api)
+		if err != nil {
+			logrus.Errorf("failed to complete metrics retrieval: %v", err)
+			*lineCounter++
+		} else {
+			printMetrics(metrics, lineCounter)
 		}
 
-		printMetrics(metrics, counter)
-
-		*counter++
 		time.Sleep(pollInterval)
 	}
 	return nil
 }
 
-func printMetrics(metrics map[MetricType]*ClusterMetric, counter *int) {
+func printMetrics(metrics map[MetricType]*ClusterMetric, lineCounter *int) {
 	instanceList := []string{}
 
 	// choose a random one to get the instance list
-	for inst := range *metrics[MetricTypeCPUIdle] {
-		instanceList = append(instanceList, inst)
+	for _, mi := range metrics {
+		for inst := range *mi {
+			instanceList = append(instanceList, inst)
+		}
+		break
 	}
+
+	if len(instanceList) == 0 {
+		fmt.Println("No data available")
+		return
+	}
+
+	*lineCounter += len(instanceList)
+
 	sort.Strings(instanceList)
 
 	header := fmt.Sprintf("%20s : %24s | %7s | %15s | %15s\n",
@@ -315,7 +333,7 @@ func printMetrics(metrics map[MetricType]*ClusterMetric, counter *int) {
 			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricTypeNetworkTransmit])[inst].Total))))
 	}
 
-	if needHeader(counter) {
+	if needHeader(lineCounter) {
 		fmt.Print(header)
 		fmt.Print(subheader)
 	}
@@ -352,18 +370,18 @@ func colorSize(format, byteString string) string {
 	return aurora.Sprintf(aurora.BrightWhite(format), byteString)
 }
 
-func needHeader(counter *int) bool {
+func needHeader(lineCounter *int) bool {
 	_, termHeight, err := terminal.GetSize(0)
 	if err != nil {
 		//logrus.Warnf("Failed to get terminal size: %v", err)
 		return true
 	}
-	if *counter == 0 {
+	if *lineCounter == 0 {
 		return true
 	}
 	// count in the header
-	if *counter >= termHeight-2 {
-		*counter = 0
+	if *lineCounter >= termHeight-2 {
+		*lineCounter = 0
 		return true
 	}
 	return false
