@@ -1,0 +1,90 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-service
+  namespace: kstat-system
+spec:
+  ports:
+  - name: metrics
+    port: 9090
+    protocol: TCP
+    targetPort: 9090
+  selector:
+    app: kstat-prometheus
+    #type: ClusterIP
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  labels:
+    app: kstat-prometheus
+  namespace: kstat-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kstat-prometheus
+  template:
+    metadata:
+      labels:
+        app: kstat-prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.28.1
+        volumeMounts:
+        - name: prom-config
+          mountPath: /etc/prometheus/
+        - name: prom-data
+          mountPath: /data/
+        command:
+        - prometheus
+        - --storage.tsdb.path
+        - /data/
+        - --storage.tsdb.retention.size
+        - 100MB
+        - --config.file
+        - /etc/prometheus/prometheus.yml
+        - --web.enable-lifecycle
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 500Mi
+          requests:
+            cpu: 500m
+            memory: 300Mi
+      - name: config-reloader
+        command:
+        - /bin/prometheus-config-reloader
+        - --watch-interval=10s
+        - --reload-url=http://127.0.0.1:9090/-/reload
+        - --config-file=/etc/prometheus/prometheus.yml
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        image: ghcr.io/prometheus-operator/prometheus-config-reloader:v0.49.0
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+        - name: prom-config
+          mountPath: /etc/prometheus/
+        ports:
+        resources:
+          limits:
+            cpu: 100m
+            memory: 50Mi
+          requests:
+            cpu: 100m
+            memory: 50Mi
+      restartPolicy: Always
+      volumes:
+      - name: prom-config
+        configMap:
+          name: kstat-prometheus-configmap
+      - name: prom-data
+        emptyDir: {}
+      serviceAccountName: kstat-service-account

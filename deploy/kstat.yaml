@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kstat
+  labels:
+    app: kstat
+  namespace: kstat-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kstat
+  template:
+    metadata:
+      labels:
+        app: kstat
+    spec:
+      containers:
+      - name: kstat
+        #image: yasker/kstat:latest
+        image: yasker/kstat:dev
+        imagePullPolicy: Always
+        command:
+        - kstat
+        - server
+        - --prometheus-server
+        - http://prometheus-service:9090
+      restartPolicy: Always
