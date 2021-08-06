@@ -2,14 +2,16 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"sort"
+	"text/template"
 
 	"code.cloudfoundry.org/bytefmt"
 	aurora "github.com/logrusorgru/aurora/v3"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
-func printMetrics(metrics map[string]*ClusterMetric, lineCounter *int) {
+func printMetrics(metrics map[string]*ClusterMetric, outputTmpl *template.Template, lineCounter *int) {
 	instanceList := []string{}
 
 	// choose a random one to get the instance list
@@ -33,30 +35,49 @@ func printMetrics(metrics map[string]*ClusterMetric, lineCounter *int) {
 		"", "----------cpu----------", "--mem--", "-----disk-----", "---network---")
 	subheader := fmt.Sprintf("%20s : %4s %4s %4s %4s %4s | %7s | %7s %7s | %7s %7s\n",
 		"instance", "usr", "sys", "idl", "wai", "stl", "avail", "read", "write", "recv", "send")
-	output := ""
+	//output := ""
 	for _, inst := range instanceList {
-		output += fmt.Sprintf("%20s : %s %s %s %s %s | %s | %s %s | %s %s\n",
-			inst,
-			colorCPU("%4d", (*metrics[MetricNameCPUUser])[inst].Average),
-			colorCPU("%4d", (*metrics[MetricNameCPUSystem])[inst].Average),
-			colorCPU("%4d", (*metrics[MetricNameCPUIdle])[inst].Average),
-			colorCPU("%4d", (*metrics[MetricNameCPUWait])[inst].Average),
-			colorCPU("%4d", (*metrics[MetricNameCPUSteal])[inst].Average),
-			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricNameMemAvailable])[inst].Value))),
-			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricNameDiskRead])[inst].Total))),
-			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricNameDiskWrite])[inst].Total))),
-			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricNameNetworkReceive])[inst].Total))),
-			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricNameNetworkTransmit])[inst].Total))))
+		/*
+			output += fmt.Sprintf("%20s : %s %s %s %s %s | %s | %s %s | %s %s\n",
+				inst,
+				colorCPU("%4d", (*metrics[MetricNameCPUUser])[inst].Average),
+				colorCPU("%4d", (*metrics[MetricNameCPUSystem])[inst].Average),
+				colorCPU("%4d", (*metrics[MetricNameCPUIdle])[inst].Average),
+				colorCPU("%4d", (*metrics[MetricNameCPUWait])[inst].Average),
+				colorCPU("%4d", (*metrics[MetricNameCPUSteal])[inst].Average),
+				colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricNameMemAvailable])[inst].Value))),
+				colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricNameDiskRead])[inst].Total))),
+				colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricNameDiskWrite])[inst].Total))),
+				colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricNameNetworkReceive])[inst].Total))),
+				colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricNameNetworkTransmit])[inst].Total))))
+		*/
+		m := map[string]string{
+			"instance":         inst,
+			"cpu_user":         colorCPU((*metrics[MetricNameCPUUser])[inst].Average),
+			"cpu_system":       colorCPU((*metrics[MetricNameCPUSystem])[inst].Average),
+			"cpu_idle":         colorCPU((*metrics[MetricNameCPUIdle])[inst].Average),
+			"cpu_wait":         colorCPU((*metrics[MetricNameCPUWait])[inst].Average),
+			"cpu_steal":        colorCPU((*metrics[MetricNameCPUSteal])[inst].Average),
+			"mem_avail":        colorSize(bytefmt.ByteSize(uint64((*metrics[MetricNameMemAvailable])[inst].Value))),
+			"disk_read":        colorSize(bytefmt.ByteSize(uint64((*metrics[MetricNameDiskRead])[inst].Total))),
+			"disk_write":       colorSize(bytefmt.ByteSize(uint64((*metrics[MetricNameDiskWrite])[inst].Total))),
+			"network_receive":  colorSize(bytefmt.ByteSize(uint64((*metrics[MetricNameNetworkReceive])[inst].Total))),
+			"network_transmit": colorSize(bytefmt.ByteSize(uint64((*metrics[MetricNameNetworkTransmit])[inst].Total))),
+		}
+		if err := outputTmpl.Execute(os.Stdout, m); err != nil {
+			fmt.Printf("failed to parse for instance %v\n", inst)
+		}
 	}
 
 	if needHeader(lineCounter) {
 		fmt.Print(header)
 		fmt.Print(subheader)
 	}
-	fmt.Print(output)
+	//fmt.Print(output)
 }
 
-func colorCPU(format string, percentage int64) string {
+func colorCPU(percentage int64) string {
+	format := "%4d"
 	if percentage <= 0 {
 		return aurora.Sprintf(aurora.Gray(10, format), percentage)
 	} else if percentage < 33 {
@@ -69,7 +90,8 @@ func colorCPU(format string, percentage int64) string {
 	return aurora.Sprintf(aurora.BrightWhite(format), percentage)
 }
 
-func colorSize(format, byteString string) string {
+func colorSize(byteString string) string {
+	format := "%7s"
 	if byteString == "0B" {
 		return aurora.Sprintf(aurora.Gray(10, format), byteString)
 	}
@@ -92,12 +114,11 @@ func needHeader(lineCounter *int) bool {
 		//logrus.Warnf("Failed to get terminal size: %v", err)
 		return true
 	}
-	if *lineCounter == 0 {
-		return true
-	}
 	// count in the header
 	if *lineCounter >= termHeight-2 {
 		*lineCounter = 0
+	}
+	if *lineCounter == 0 {
 		return true
 	}
 	return false

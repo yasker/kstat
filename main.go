@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"os"
+	"text/template"
 	"time"
 
 	"github.com/pkg/errors"
@@ -31,16 +32,16 @@ type InstanceMetric struct {
 }
 
 const (
-	MetricNameDiskRead        = "disk-read"
-	MetricNameDiskWrite       = "disk-write"
-	MetricNameNetworkReceive  = "network-receive"
-	MetricNameNetworkTransmit = "network-transmit"
-	MetricNameCPUUser         = "cpu-user"
-	MetricNameCPUSystem       = "cpu-system"
-	MetricNameCPUIdle         = "cpu-idle"
-	MetricNameCPUWait         = "cpu-wait"
-	MetricNameCPUSteal        = "cpu-steal"
-	MetricNameMemAvailable    = "mem-avail"
+	MetricNameDiskRead        = "disk_read"
+	MetricNameDiskWrite       = "disk_write"
+	MetricNameNetworkReceive  = "network_receive"
+	MetricNameNetworkTransmit = "network_transmit"
+	MetricNameCPUUser         = "cpu_user"
+	MetricNameCPUSystem       = "cpu_system"
+	MetricNameCPUIdle         = "cpu_idle"
+	MetricNameCPUWait         = "cpu_wait"
+	MetricNameCPUSteal        = "cpu_steal"
+	MetricNameMemAvailable    = "mem_avail"
 )
 
 const (
@@ -48,10 +49,11 @@ const (
 )
 
 type MetricConfig struct {
-	Name        string
-	DeviceLabel string
-	QueryString string
-	Scale       float64
+	Name        string  `yaml:"name"`
+	DeviceLabel string  `yaml:"device_label"`
+	QueryString string  `yaml:"query_string"`
+	Scale       float64 `yaml:"scale"`
+	ValueType   string  `yaml:"value_type"`
 }
 
 const (
@@ -59,8 +61,9 @@ const (
 )
 
 const (
-	FlagPrometheusServer = "prometheus-server"
-	FlagMetricConfigFile = "metrics.yaml"
+	FlagPrometheusServer   = "prometheus-server"
+	FlagMetricConfigFile   = "metrics-config"
+	FlagOutputTemplateFile = "output-template"
 )
 
 func ServerCmd() cli.Command {
@@ -76,6 +79,11 @@ func ServerCmd() cli.Command {
 				Name:  FlagMetricConfigFile,
 				Usage: "Specify the metric config yaml",
 				Value: "metrics.yaml",
+			},
+			cli.StringFlag{
+				Name:  FlagOutputTemplateFile,
+				Usage: "Specify the output output template file",
+				Value: "output.tmpl",
 			},
 		},
 		Action: func(c *cli.Context) {
@@ -134,6 +142,12 @@ func startServer(c *cli.Context) error {
 		return errors.Wrapf(err, "cannot decode the metrics config file %v", cfgFile)
 	}
 
+	outputTmplFile := c.String(FlagOutputTemplateFile)
+	outputTmpl, err := template.ParseFiles(outputTmplFile)
+	if err != nil {
+		return errors.Wrapf(err, "cannot read or parse the output template file %v", outputTmplFile)
+	}
+
 	lineCounter := new(int)
 	*lineCounter = 0
 	for {
@@ -142,7 +156,7 @@ func startServer(c *cli.Context) error {
 			logrus.Errorf("failed to complete metrics retrieval: %v", err)
 			*lineCounter++
 		} else {
-			printMetrics(metrics, lineCounter)
+			printMetrics(metrics, outputTmpl, lineCounter)
 		}
 
 		time.Sleep(pollInterval)
