@@ -2,28 +2,19 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"os"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+	"gopkg.in/yaml.v2"
 
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 
 	"github.com/yasker/kstat/pkg/version"
-)
-
-type CPUMode string
-
-const (
-	CPUModeUser   = CPUMode("user")
-	CPUModeSystem = CPUMode("system")
-	CPUModeIdle   = CPUMode("idle")
-	CPUModeWait   = CPUMode("iowait")
-	CPUModeSteal  = CPUMode("steal")
 )
 
 // ClusterMetric use the instance name as the key
@@ -39,19 +30,19 @@ type InstanceMetric struct {
 	Value int64
 }
 
-type MetricType string
+type MetricName string
 
 const (
-	MetricTypeDiskRead        = MetricType("disk-read")
-	MetricTypeDiskWrite       = MetricType("disk-write")
-	MetricTypeNetworkReceive  = MetricType("network-receive")
-	MetricTypeNetworkTransmit = MetricType("network-transmit")
-	MetricTypeCPUUser         = MetricType("cpu-user")
-	MetricTypeCPUSystem       = MetricType("cpu-system")
-	MetricTypeCPUIdle         = MetricType("cpu-idle")
-	MetricTypeCPUWait         = MetricType("cpu-wait")
-	MetricTypeCPUSteal        = MetricType("cpu-steal")
-	MetricTypeMemAvailable    = MetricType("mem-avail")
+	MetricNameDiskRead        = MetricName("disk-read")
+	MetricNameDiskWrite       = MetricName("disk-write")
+	MetricNameNetworkReceive  = MetricName("network-receive")
+	MetricNameNetworkTransmit = MetricName("network-transmit")
+	MetricNameCPUUser         = MetricName("cpu-user")
+	MetricNameCPUSystem       = MetricName("cpu-system")
+	MetricNameCPUIdle         = MetricName("cpu-idle")
+	MetricNameCPUWait         = MetricName("cpu-wait")
+	MetricNameCPUSteal        = MetricName("cpu-steal")
+	MetricNameMemAvailable    = MetricName("mem-avail")
 )
 
 const (
@@ -59,8 +50,8 @@ const (
 )
 
 type MetricConfig struct {
-	Type        MetricType
-	DeviceLabel model.LabelName
+	Name        MetricName
+	DeviceLabel string
 	QueryString string
 	Scale       float64
 }
@@ -69,74 +60,9 @@ const (
 	SampleInterval = "10s"
 )
 
-var (
-	MetricConfigMap = map[MetricType]*MetricConfig{
-		MetricTypeDiskRead: {
-			Type:        MetricTypeDiskRead,
-			QueryString: fmt.Sprintf("rate(node_disk_read_bytes_total{job=\"node-exporter\"}[%s])", SampleInterval),
-			DeviceLabel: model.LabelName("device"),
-			Scale:       1,
-		},
-		MetricTypeDiskWrite: {
-			Type:        MetricTypeDiskWrite,
-			QueryString: fmt.Sprintf("rate(node_disk_written_bytes_total{job=\"node-exporter\"}[%s])", SampleInterval),
-			DeviceLabel: model.LabelName("device"),
-			Scale:       1,
-		},
-		MetricTypeNetworkReceive: {
-			Type:        MetricTypeNetworkReceive,
-			QueryString: fmt.Sprintf("rate(node_network_receive_bytes_total{job=\"node-exporter\"}[%s])", SampleInterval),
-			DeviceLabel: model.LabelName("device"),
-			Scale:       1,
-		},
-		MetricTypeNetworkTransmit: {
-			Type:        MetricTypeNetworkTransmit,
-			QueryString: fmt.Sprintf("rate(node_network_transmit_bytes_total{job=\"node-exporter\"}[%s])", SampleInterval),
-			DeviceLabel: model.LabelName("device"),
-			Scale:       1,
-		},
-		MetricTypeCPUUser: {
-			Type:        MetricTypeCPUUser,
-			QueryString: fmt.Sprintf("rate(node_cpu_seconds_total{job=\"node-exporter\", mode=\"%s\"}[%s])", CPUModeUser, SampleInterval),
-			DeviceLabel: model.LabelName("cpu"),
-			Scale:       100,
-		},
-		MetricTypeCPUSystem: {
-			Type:        MetricTypeCPUSystem,
-			QueryString: fmt.Sprintf("rate(node_cpu_seconds_total{job=\"node-exporter\", mode=\"%s\"}[%s])", CPUModeSystem, SampleInterval),
-			DeviceLabel: model.LabelName("cpu"),
-			Scale:       100,
-		},
-		MetricTypeCPUIdle: {
-			Type:        MetricTypeCPUIdle,
-			QueryString: fmt.Sprintf("rate(node_cpu_seconds_total{job=\"node-exporter\", mode=\"%s\"}[%s])", CPUModeIdle, SampleInterval),
-			DeviceLabel: model.LabelName("cpu"),
-			Scale:       100,
-		},
-		MetricTypeCPUWait: {
-			Type:        MetricTypeCPUWait,
-			QueryString: fmt.Sprintf("rate(node_cpu_seconds_total{job=\"node-exporter\", mode=\"%s\"}[%s])", CPUModeWait, SampleInterval),
-			DeviceLabel: model.LabelName("cpu"),
-			Scale:       100,
-		},
-		MetricTypeCPUSteal: {
-			Type:        MetricTypeCPUSteal,
-			QueryString: fmt.Sprintf("rate(node_cpu_seconds_total{job=\"node-exporter\", mode=\"%s\"}[%s])", CPUModeSteal, SampleInterval),
-			DeviceLabel: model.LabelName("cpu"),
-			Scale:       100,
-		},
-		MetricTypeMemAvailable: {
-			Type:        MetricTypeMemAvailable,
-			QueryString: fmt.Sprintf("node_memory_MemAvailable_bytes{job=\"node-exporter\"}"),
-			DeviceLabel: "",
-			Scale:       1,
-		},
-	}
-)
-
 const (
 	FlagPrometheusServer = "prometheus-server"
-	FlagServiceAccount   = "service-account"
+	FlagMetricConfigFile = "metrics.yaml"
 )
 
 func ServerCmd() cli.Command {
@@ -147,6 +73,11 @@ func ServerCmd() cli.Command {
 				Name:  FlagPrometheusServer,
 				Usage: "Specify the Prometheus Server address",
 				Value: "http://localhost:9090",
+			},
+			cli.StringFlag{
+				Name:  FlagMetricConfigFile,
+				Usage: "Specify the metric config yaml",
+				Value: "metrics.yaml",
 			},
 		},
 		Action: func(c *cli.Context) {
@@ -180,23 +111,35 @@ func startServer(c *cli.Context) error {
 		Address: server,
 	})
 	if err != nil {
-		logrus.Errorf("Error start client to %s: %v", server, err)
-		return err
+		return errors.Wrapf(err, "cannot start client for %s", server)
 	}
 
 	api := promv1.NewAPI(client)
 	pollInterval := 5 * time.Second
 
 	if err := testConnection(api); err != nil {
-		logrus.Errorf("Error connecting to %s: %v", server, err)
-		return err
+		return errors.Wrapf(err, "cannot connecting to %s", server)
 
+	}
+
+	cfgFile := c.String(FlagMetricConfigFile)
+
+	f, err := os.Open(cfgFile)
+	if err != nil {
+		return errors.Wrapf(err, "cannot open the metrics config file %v", cfgFile)
+	}
+	defer f.Close()
+
+	metricConfigs := []*MetricConfig{}
+
+	if err := yaml.NewDecoder(f).Decode(&metricConfigs); err != nil {
+		return errors.Wrapf(err, "cannot decode the metrics config file %v", cfgFile)
 	}
 
 	lineCounter := new(int)
 	*lineCounter = 0
 	for {
-		metrics, err := getMetrics(api)
+		metrics, err := getMetrics(api, metricConfigs)
 		if err != nil {
 			logrus.Errorf("failed to complete metrics retrieval: %v", err)
 			*lineCounter++

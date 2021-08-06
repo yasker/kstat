@@ -35,7 +35,7 @@ func query(client promv1.API, ctx context.Context, queryString string) (model.Ve
 func getClusterMetric(client promv1.API, ctx context.Context, cfg *MetricConfig) (*ClusterMetric, error) {
 	vector, err := query(client, ctx, cfg.QueryString)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get metric for %v", cfg.Type)
+		return nil, errors.Wrapf(err, "failed to get metric for %v", cfg.Name)
 	}
 
 	report := ClusterMetric{}
@@ -46,7 +46,7 @@ func getClusterMetric(client promv1.API, ctx context.Context, cfg *MetricConfig)
 			report[inst] = &InstanceMetric{}
 		}
 		if cfg.DeviceLabel != "" {
-			dev = string(s.Metric[cfg.DeviceLabel])
+			dev = string(s.Metric[model.LabelName(cfg.DeviceLabel)])
 			if report[inst].DeviceMetrics == nil {
 				report[inst].DeviceMetrics = map[string]int64{}
 			}
@@ -75,18 +75,18 @@ func testConnection(client promv1.API) error {
 	return err
 }
 
-func getMetrics(client promv1.API) (map[MetricType]*ClusterMetric, error) {
-	metrics := map[MetricType]*ClusterMetric{}
+func getMetrics(client promv1.API, cfgs []*MetricConfig) (map[MetricName]*ClusterMetric, error) {
+	metrics := map[MetricName]*ClusterMetric{}
 
-	for k, c := range MetricConfigMap {
+	for _, c := range cfgs {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
 		cm, err := getClusterMetric(client, ctx, c)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get metric for %v", k)
+			return nil, errors.Wrapf(err, "failed to get metric for %v", c.Name)
 		}
-		metrics[k] = cm
+		metrics[c.Name] = cm
 	}
 	return metrics, nil
 }

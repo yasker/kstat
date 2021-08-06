@@ -9,7 +9,7 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 )
 
-func printMetrics(metrics map[MetricType]*ClusterMetric, lineCounter *int) {
+func printMetrics(metrics map[MetricName]*ClusterMetric, lineCounter *int) {
 	instanceList := []string{}
 
 	// choose a random one to get the instance list
@@ -37,16 +37,16 @@ func printMetrics(metrics map[MetricType]*ClusterMetric, lineCounter *int) {
 	for _, inst := range instanceList {
 		output += fmt.Sprintf("%20s : %s %s %s %s %s | %s | %s %s | %s %s\n",
 			inst,
-			colorCPU("%4d", (*metrics[MetricTypeCPUUser])[inst].Average),
-			colorCPU("%4d", (*metrics[MetricTypeCPUSystem])[inst].Average),
-			colorCPU("%4d", (*metrics[MetricTypeCPUIdle])[inst].Average),
-			colorCPU("%4d", (*metrics[MetricTypeCPUWait])[inst].Average),
-			colorCPU("%4d", (*metrics[MetricTypeCPUSteal])[inst].Average),
-			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricTypeMemAvailable])[inst].Value))),
-			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricTypeDiskRead])[inst].Total))),
-			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricTypeDiskWrite])[inst].Total))),
-			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricTypeNetworkReceive])[inst].Total))),
-			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricTypeNetworkTransmit])[inst].Total))))
+			colorCPU("%4d", (*metrics[MetricNameCPUUser])[inst].Average),
+			colorCPU("%4d", (*metrics[MetricNameCPUSystem])[inst].Average),
+			colorCPU("%4d", (*metrics[MetricNameCPUIdle])[inst].Average),
+			colorCPU("%4d", (*metrics[MetricNameCPUWait])[inst].Average),
+			colorCPU("%4d", (*metrics[MetricNameCPUSteal])[inst].Average),
+			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricNameMemAvailable])[inst].Value))),
+			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricNameDiskRead])[inst].Total))),
+			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricNameDiskWrite])[inst].Total))),
+			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricNameNetworkReceive])[inst].Total))),
+			colorSize("%7s", bytefmt.ByteSize(uint64((*metrics[MetricNameNetworkTransmit])[inst].Total))))
 	}
 
 	if needHeader(lineCounter) {

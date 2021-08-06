@@ -1,0 +1,40 @@
+- name: disk-read
+  devicelabel: device
+  querystring: rate(node_disk_read_bytes_total{job="node-exporter"}[10s])
+  scale: 1
+- name: disk-write
+  devicelabel: device
+  querystring: rate(node_disk_written_bytes_total{job="node-exporter"}[10s])
+  scale: 1
+- name: network-receive
+  devicelabel: device
+  querystring: rate(node_network_receive_bytes_total{job="node-exporter"}[10s])
+  scale: 1
+- name: network-transmit
+  devicelabel: device
+  querystring: rate(node_network_transmit_bytes_total{job="node-exporter"}[10s])
+  scale: 1
+- name: cpu-user
+  devicelabel: cpu
+  querystring: rate(node_cpu_seconds_total{job="node-exporter", mode="user"}[10s])
+  scale: 100
+- name: cpu-system
+  devicelabel: cpu
+  querystring: rate(node_cpu_seconds_total{job="node-exporter", mode="system"}[10s])
+  scale: 100
+- name: cpu-idle
+  devicelabel: cpu
+  querystring: rate(node_cpu_seconds_total{job="node-exporter", mode="idle"}[10s])
+  scale: 100
+- name: cpu-wait
+  devicelabel: cpu
+  querystring: rate(node_cpu_seconds_total{job="node-exporter", mode="iowait"}[10s])
+  scale: 100
+- name: cpu-steal
+  devicelabel: cpu
+  querystring: rate(node_cpu_seconds_total{job="node-exporter", mode="steal"}[10s])
+  scale: 100
+- name: mem-avail
+  devicelabel: ""
+  querystring: node_memory_MemAvailable_bytes{job="node-exporter"}
+  scale: 1
