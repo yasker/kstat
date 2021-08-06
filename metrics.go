@@ -75,8 +75,8 @@ func testConnection(client promv1.API) error {
 	return err
 }
 
-func getMetrics(client promv1.API, cfgs []*MetricConfig) (map[MetricName]*ClusterMetric, error) {
-	metrics := map[MetricName]*ClusterMetric{}
+func getMetrics(client promv1.API, cfgs []*MetricConfig) (map[string]*ClusterMetric, error) {
+	metrics := map[string]*ClusterMetric{}
 
 	for _, c := range cfgs {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

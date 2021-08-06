@@ -9,7 +9,7 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 )
 
-func printMetrics(metrics map[MetricName]*ClusterMetric, lineCounter *int) {
+func printMetrics(metrics map[string]*ClusterMetric, lineCounter *int) {
 	instanceList := []string{}
 
 	// choose a random one to get the instance list

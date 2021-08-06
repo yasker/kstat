@@ -30,19 +30,17 @@ type InstanceMetric struct {
 	Value int64
 }
 
-type MetricName string
-
 const (
-	MetricNameDiskRead        = MetricName("disk-read")
-	MetricNameDiskWrite       = MetricName("disk-write")
-	MetricNameNetworkReceive  = MetricName("network-receive")
-	MetricNameNetworkTransmit = MetricName("network-transmit")
-	MetricNameCPUUser         = MetricName("cpu-user")
-	MetricNameCPUSystem       = MetricName("cpu-system")
-	MetricNameCPUIdle         = MetricName("cpu-idle")
-	MetricNameCPUWait         = MetricName("cpu-wait")
-	MetricNameCPUSteal        = MetricName("cpu-steal")
-	MetricNameMemAvailable    = MetricName("mem-avail")
+	MetricNameDiskRead        = "disk-read"
+	MetricNameDiskWrite       = "disk-write"
+	MetricNameNetworkReceive  = "network-receive"
+	MetricNameNetworkTransmit = "network-transmit"
+	MetricNameCPUUser         = "cpu-user"
+	MetricNameCPUSystem       = "cpu-system"
+	MetricNameCPUIdle         = "cpu-idle"
+	MetricNameCPUWait         = "cpu-wait"
+	MetricNameCPUSteal        = "cpu-steal"
+	MetricNameMemAvailable    = "mem-avail"
 )
 
 const (
@@ -50,7 +48,7 @@ const (
 )
 
 type MetricConfig struct {
-	Name        MetricName
+	Name        string
 	DeviceLabel string
 	QueryString string
 	Scale       float64
