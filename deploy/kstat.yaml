@@ -25,4 +25,17 @@ spec:
         - server
         - --prometheus-server
         - http://prometheus-service:9090
+        - --metrics-config
+        - /etc/kstat/metrics.yaml
+        - --header-template
+        - /etc/kstat/header.tmpl
+        - --output-template
+        - /etc/kstat/output.tmpl
+        volumeMounts:
+        - name: kstat-config
+          mountPath: /etc/kstat/
       restartPolicy: Always
+      volumes:
+      - name: kstat-config
+        configMap:
+          name: kstat-configmap

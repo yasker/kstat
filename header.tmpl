@@ -1,0 +1,8 @@
+{{printf "%20s : %25s | %8s | %16s | %16s"
+"" "-----------cpu-----------" "--mem---" "------disk------" "-----network----"}}
+{{printf "%20s : %5s%5s%5s%5s%5s | %8s | %8s%8s | %8s%8s"
+.instance
+.cpu_user .cpu_system .cpu_idle .cpu_wait .cpu_steal
+.mem_avail
+.disk_read .disk_write
+.network_receive .network_transmit}}

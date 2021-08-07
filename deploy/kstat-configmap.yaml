@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kstat-configmap
+  namespace: kstat-system
+data:
+  metrics.yaml: |
+    - name: disk_read
+      device_label: device
+      query_string: rate(node_disk_read_bytes_total{job="node-exporter"}[10s])
+      scale: 1
+      value_type: size
+      shorthand: read
+    - name: disk_write
+      device_label: device
+      query_string: rate(node_disk_written_bytes_total{job="node-exporter"}[10s])
+      scale: 1
+      value_type: size
+      shorthand: write
+    - name: network_receive
+      device_label: device
+      query_string: rate(node_network_receive_bytes_total{job="node-exporter"}[10s])
+      scale: 1
+      value_type: size
+      shorthand: recv
+    - name: network_transmit
+      device_label: device
+      query_string: rate(node_network_transmit_bytes_total{job="node-exporter"}[10s])
+      scale: 1
+      value_type: size
+      shorthand: send
+    - name: cpu_user
+      device_label: cpu
+      query_string: rate(node_cpu_seconds_total{job="node-exporter", mode="user"}[10s])
+      scale: 100
+      value_type: cpu
+      shorthand: usr
+    - name: cpu_system
+      device_label: cpu
+      query_string: rate(node_cpu_seconds_total{job="node-exporter", mode="system"}[10s])
+      scale: 100
+      value_type: cpu
+      shorthand: sys
+    - name: cpu_idle
+      device_label: cpu
+      query_string: rate(node_cpu_seconds_total{job="node-exporter", mode="idle"}[10s])
+      scale: 100
+      value_type: cpu
+      shorthand: idle
+    - name: cpu_wait
+      device_label: cpu
+      query_string: rate(node_cpu_seconds_total{job="node-exporter", mode="iowait"}[10s])
+      scale: 100
+      value_type: cpu
+      shorthand: wait
+    - name: cpu_steal
+      device_label: cpu
+      query_string: rate(node_cpu_seconds_total{job="node-exporter", mode="steal"}[10s])
+      scale: 100
+      value_type: cpu
+      shorthand: stl
+    - name: mem_avail
+      device_label: ""
+      query_string: node_memory_MemAvailable_bytes{job="node-exporter"}
+      scale: 1
+      value_type: size
+      shorthand: avail
+  header.tmpl: |
+    {{printf "%20s : %25s | %8s | %16s | %16s"
+    "" "-----------cpu-----------" "--mem---" "------disk------" "-----network----"}}
+    {{printf "%20s : %5s%5s%5s%5s%5s | %8s | %8s%8s | %8s%8s"
+    .instance
+    .cpu_user .cpu_system .cpu_idle .cpu_wait .cpu_steal
+    .mem_avail
+    .disk_read .disk_write
+    .network_receive .network_transmit}}
+  output.tmpl: |
+    {{
+    printf "%20s : %s%s%s%s%s | %s | %s%s | %s%s"
+    .instance
+    .cpu_user .cpu_system .cpu_idle .cpu_wait .cpu_steal
+    .mem_avail
+    .disk_read .disk_write
+    .network_receive .network_transmit
+    }}

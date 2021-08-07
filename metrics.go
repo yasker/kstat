@@ -62,6 +62,8 @@ func getClusterMetric(client promv1.API, ctx context.Context, cfg *MetricConfig)
 				m.Total += v
 			}
 			m.Average = m.Total / devCount
+		} else {
+			m.Total = m.Value
 		}
 	}
 	return &report, nil
@@ -75,7 +77,7 @@ func testConnection(client promv1.API) error {
 	return err
 }
 
-func getMetrics(client promv1.API, cfgs []*MetricConfig) (map[string]*ClusterMetric, error) {
+func getMetrics(client promv1.API, cfgs map[string]*MetricConfig) (map[string]*ClusterMetric, error) {
 	metrics := map[string]*ClusterMetric{}
 
 	for _, c := range cfgs {

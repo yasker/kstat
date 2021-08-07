@@ -32,20 +32,15 @@ type InstanceMetric struct {
 }
 
 const (
-	MetricNameDiskRead        = "disk_read"
-	MetricNameDiskWrite       = "disk_write"
-	MetricNameNetworkReceive  = "network_receive"
-	MetricNameNetworkTransmit = "network_transmit"
-	MetricNameCPUUser         = "cpu_user"
-	MetricNameCPUSystem       = "cpu_system"
-	MetricNameCPUIdle         = "cpu_idle"
-	MetricNameCPUWait         = "cpu_wait"
-	MetricNameCPUSteal        = "cpu_steal"
-	MetricNameMemAvailable    = "mem_avail"
+	InstanceLabel = model.LabelName("instance")
 )
 
 const (
-	InstanceLabel = model.LabelName("instance")
+	ValueTypeCPU  = "cpu"
+	ValueTypeSize = "size"
+
+	ValueTypeCPUFormat  = "%5s"
+	ValueTypeSizeFormat = "%8s"
 )
 
 type MetricConfig struct {
@@ -54,6 +49,7 @@ type MetricConfig struct {
 	QueryString string  `yaml:"query_string"`
 	Scale       float64 `yaml:"scale"`
 	ValueType   string  `yaml:"value_type"`
+	Shorthand   string  `yaml:"shorthand"`
 }
 
 const (
@@ -63,6 +59,7 @@ const (
 const (
 	FlagPrometheusServer   = "prometheus-server"
 	FlagMetricConfigFile   = "metrics-config"
+	FlagHeaderTemplateFile = "header-template"
 	FlagOutputTemplateFile = "output-template"
 )
 
@@ -81,8 +78,13 @@ func ServerCmd() cli.Command {
 				Value: "metrics.yaml",
 			},
 			cli.StringFlag{
+				Name:  FlagHeaderTemplateFile,
+				Usage: "Specify the header template file",
+				Value: "header.tmpl",
+			},
+			cli.StringFlag{
 				Name:  FlagOutputTemplateFile,
-				Usage: "Specify the output output template file",
+				Usage: "Specify the output template file",
 				Value: "output.tmpl",
 			},
 		},
@@ -141,6 +143,16 @@ func startServer(c *cli.Context) error {
 	if err := yaml.NewDecoder(f).Decode(&metricConfigs); err != nil {
 		return errors.Wrapf(err, "cannot decode the metrics config file %v", cfgFile)
 	}
+	metricConfigMap := map[string]*MetricConfig{}
+	for _, m := range metricConfigs {
+		metricConfigMap[m.Name] = m
+	}
+
+	headerTmplFile := c.String(FlagHeaderTemplateFile)
+	headerTmpl, err := template.ParseFiles(headerTmplFile)
+	if err != nil {
+		return errors.Wrapf(err, "cannot read or parse the header template file %v", headerTmplFile)
+	}
 
 	outputTmplFile := c.String(FlagOutputTemplateFile)
 	outputTmpl, err := template.ParseFiles(outputTmplFile)
@@ -151,12 +163,12 @@ func startServer(c *cli.Context) error {
 	lineCounter := new(int)
 	*lineCounter = 0
 	for {
-		metrics, err := getMetrics(api, metricConfigs)
+		metrics, err := getMetrics(api, metricConfigMap)
 		if err != nil {
 			logrus.Errorf("failed to complete metrics retrieval: %v", err)
 			*lineCounter++
 		} else {
-			printMetrics(metrics, outputTmpl, lineCounter)
+			printMetrics(metrics, metricConfigMap, headerTmpl, outputTmpl, lineCounter)
 		}
 
 		time.Sleep(pollInterval)
