@@ -63,6 +63,17 @@ const (
 	FlagOutputTemplateFile = "output-template"
 )
 
+var (
+	ConfigCheckInterval = 30 * time.Second
+	ConfigCheckedAt     time.Time
+)
+
+var (
+	MetricConfigMap map[string]*MetricConfig
+	HeaderTemplate  *template.Template
+	OutputTemplate  *template.Template
+)
+
 func ServerCmd() cli.Command {
 	return cli.Command{
 		Name: "server",
@@ -131,6 +142,34 @@ func startServer(c *cli.Context) error {
 	}
 
 	cfgFile := c.String(FlagMetricConfigFile)
+	headerTmplFile := c.String(FlagHeaderTemplateFile)
+	outputTmplFile := c.String(FlagOutputTemplateFile)
+
+	lineCounter := new(int)
+	*lineCounter = 0
+	for {
+		if time.Now().After(ConfigCheckedAt.Add(ConfigCheckInterval)) {
+			if err := reloadConfigFiles(cfgFile, headerTmplFile, outputTmplFile); err != nil {
+				logrus.Errorf("failed to reload the configuration files: %v", err)
+			}
+			ConfigCheckedAt = time.Now()
+		}
+
+		metrics, err := getMetrics(api, MetricConfigMap)
+		if err != nil {
+			logrus.Errorf("failed to complete metrics retrieval: %v", err)
+			*lineCounter++
+		} else {
+			printMetrics(metrics, MetricConfigMap, HeaderTemplate, OutputTemplate, lineCounter)
+		}
+
+		time.Sleep(pollInterval)
+	}
+	return nil
+}
+
+func reloadConfigFiles(cfgFile, headerTmplFile, outputTmplFile string) error {
+	var err error
 
 	f, err := os.Open(cfgFile)
 	if err != nil {
@@ -143,35 +182,19 @@ func startServer(c *cli.Context) error {
 	if err := yaml.NewDecoder(f).Decode(&metricConfigs); err != nil {
 		return errors.Wrapf(err, "cannot decode the metrics config file %v", cfgFile)
 	}
-	metricConfigMap := map[string]*MetricConfig{}
+	MetricConfigMap = map[string]*MetricConfig{}
 	for _, m := range metricConfigs {
-		metricConfigMap[m.Name] = m
+		MetricConfigMap[m.Name] = m
 	}
 
-	headerTmplFile := c.String(FlagHeaderTemplateFile)
-	headerTmpl, err := template.ParseFiles(headerTmplFile)
+	HeaderTemplate, err = template.ParseFiles(headerTmplFile)
 	if err != nil {
 		return errors.Wrapf(err, "cannot read or parse the header template file %v", headerTmplFile)
 	}
 
-	outputTmplFile := c.String(FlagOutputTemplateFile)
-	outputTmpl, err := template.ParseFiles(outputTmplFile)
+	OutputTemplate, err = template.ParseFiles(outputTmplFile)
 	if err != nil {
 		return errors.Wrapf(err, "cannot read or parse the output template file %v", outputTmplFile)
-	}
-
-	lineCounter := new(int)
-	*lineCounter = 0
-	for {
-		metrics, err := getMetrics(api, metricConfigMap)
-		if err != nil {
-			logrus.Errorf("failed to complete metrics retrieval: %v", err)
-			*lineCounter++
-		} else {
-			printMetrics(metrics, metricConfigMap, headerTmpl, outputTmpl, lineCounter)
-		}
-
-		time.Sleep(pollInterval)
 	}
 	return nil
 }
