@@ -85,22 +85,24 @@ func printMetrics(metrics map[string]*ClusterMetric, cfgMap map[string]*MetricCo
 				default:
 					fmt.Printf("Unknown value type %v for %v\n", cfg.ValueType, k)
 				}
-				devValue := ""
-				for devName, devMetrics := range (*m)[inst].DeviceMetrics {
-					switch cfg.ValueType {
-					case ValueTypeCPU:
-						devValue = colorCPU(devMetrics)
-					case ValueTypeSize:
-						devValue = colorSize(bytefmt.ByteSize(uint64(devMetrics)))
-					default:
-						fmt.Printf("Unknown value type %v for %v\n", cfg.ValueType, k)
+				/*
+					devValue := ""
+					for devName, devMetrics := range (*m)[inst].DeviceMetrics {
+						switch cfg.ValueType {
+						case ValueTypeCPU:
+							devValue = colorCPU(devMetrics)
+						case ValueTypeSize:
+							devValue = colorSize(bytefmt.ByteSize(uint64(devMetrics)))
+						default:
+							fmt.Printf("Unknown value type %v for %v\n", cfg.ValueType, k)
+						}
+						if mc[devName] == nil {
+							mc[devName] = map[string]string{}
+							mc[devName]["instance"] = devName
+						}
+						mc[devName][k] = devValue
 					}
-					if mc[devName] == nil {
-						mc[devName] = map[string]string{}
-						mc[devName]["instance"] = devName
-					}
-					mc[devName][k] = devValue
-				}
+				*/
 			} else {
 				switch cfg.ValueType {
 				case ValueTypeCPU:
@@ -117,26 +119,28 @@ func printMetrics(metrics map[string]*ClusterMetric, cfgMap map[string]*MetricCo
 		if err := outputTmpl.Execute(output, mc[MetricsOutputSummaryKey]); err != nil {
 			fmt.Printf("failed to parse for instance %v\n", inst)
 		}
-		for _, dName := range instanceDeviceList[inst] {
-			for k, cfg := range cfgMap {
-				_, exists := mc[dName][k]
-				if !exists {
-					value := ""
-					switch cfg.ValueType {
-					case ValueTypeCPU:
-						value = fmt.Sprintf(ValueTypeCPUFormat, "")
-					case ValueTypeSize:
-						value = fmt.Sprintf(ValueTypeSizeFormat, "")
-					default:
-						fmt.Printf("Unknown value type %v for %v\n", cfg.ValueType, k)
+		/*
+			for _, dName := range instanceDeviceList[inst] {
+				for k, cfg := range cfgMap {
+					_, exists := mc[dName][k]
+					if !exists {
+						value := ""
+						switch cfg.ValueType {
+						case ValueTypeCPU:
+							value = fmt.Sprintf(ValueTypeCPUFormat, "")
+						case ValueTypeSize:
+							value = fmt.Sprintf(ValueTypeSizeFormat, "")
+						default:
+							fmt.Printf("Unknown value type %v for %v\n", cfg.ValueType, k)
+						}
+						mc[dName][cfg.Name] = value
 					}
-					mc[dName][cfg.Name] = value
+				}
+				if err := outputTmpl.Execute(output, mc[dName]); err != nil {
+					fmt.Printf("failed to parse for instance device %v\n", dName)
 				}
 			}
-			if err := outputTmpl.Execute(output, mc[dName]); err != nil {
-				fmt.Printf("failed to parse for instance device %v\n", dName)
-			}
-		}
+		*/
 	}
 
 	fmt.Print(output.String())
