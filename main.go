@@ -44,12 +44,14 @@ const (
 )
 
 type MetricConfig struct {
-	Name        string  `yaml:"name"`
-	DeviceLabel string  `yaml:"device_label"`
-	QueryString string  `yaml:"query_string"`
-	Scale       float64 `yaml:"scale"`
-	ValueType   string  `yaml:"value_type"`
-	Shorthand   string  `yaml:"shorthand"`
+	Name        string `yaml:"name"`
+	DeviceLabel string `yaml:"device_label"`
+	QueryString string `yaml:"query_string"`
+
+	Scale        float64 `yaml:"scale"`
+	ValueType    string  `yaml:"value_type"`
+	Shorthand    string  `yaml:"shorthand"`
+	DevicePrefix string  `yaml:"device_prefix"`
 }
 
 const (

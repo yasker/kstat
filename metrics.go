@@ -46,7 +46,7 @@ func getClusterMetric(client promv1.API, ctx context.Context, cfg *MetricConfig)
 			report[inst] = &InstanceMetric{}
 		}
 		if cfg.DeviceLabel != "" {
-			dev = string(s.Metric[model.LabelName(cfg.DeviceLabel)])
+			dev = cfg.DevicePrefix + ": " + string(s.Metric[model.LabelName(cfg.DeviceLabel)])
 			if report[inst].DeviceMetrics == nil {
 				report[inst].DeviceMetrics = map[string]int64{}
 			}

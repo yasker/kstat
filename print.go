@@ -11,25 +11,42 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 )
 
-func printMetrics(metrics map[string]*ClusterMetric, cfgMap map[string]*MetricConfig, headerTmpl, outputTmpl *template.Template, lineCounter *int) {
-	instanceMap := map[string]struct{}{}
+const (
+	MetricsOutputSummaryKey = "SUMMARY"
+)
 
-	// choose a random one to get the instance list
+func printMetrics(metrics map[string]*ClusterMetric, cfgMap map[string]*MetricConfig, headerTmpl, outputTmpl *template.Template, lineCounter *int) {
+	instanceMap := map[string]map[string]struct{}{}
+
 	for _, mi := range metrics {
-		for inst := range *mi {
-			instanceMap[inst] = struct{}{}
+		for inst, m := range *mi {
+			if instanceMap[inst] == nil {
+				instanceMap[inst] = map[string]struct{}{}
+			}
+			devMap := instanceMap[inst]
+			for dev := range (*m).DeviceMetrics {
+				devMap[dev] = struct{}{}
+			}
 		}
 	}
-
 	instanceList := []string{}
+	instanceDeviceList := map[string][]string{}
 	for k := range instanceMap {
 		instanceList = append(instanceList, k)
+		devList := []string{}
+		for d := range instanceMap[k] {
+			devList = append(devList, d)
+		}
+		sort.Strings(devList)
+		instanceDeviceList[k] = devList
 	}
 
 	if len(instanceList) == 0 {
 		fmt.Println("No data available")
 		return
 	}
+
+	sort.Strings(instanceList)
 
 	output := &strings.Builder{}
 	if needHeader(lineCounter) {
@@ -46,12 +63,12 @@ func printMetrics(metrics map[string]*ClusterMetric, cfgMap map[string]*MetricCo
 
 	*lineCounter += len(instanceList)
 
-	sort.Strings(instanceList)
-
 	for _, inst := range instanceList {
-		mc := map[string]string{
-			"instance": inst,
-		}
+		// instance -> instance device -> metrics
+		// special key SUMMARY stored the summarized metrics
+		mc := map[string]map[string]string{}
+		mc[MetricsOutputSummaryKey] = map[string]string{}
+		mc[MetricsOutputSummaryKey]["instance"] = inst
 		for k, m := range metrics {
 			cfg, exist := cfgMap[k]
 			if !exist {
@@ -68,6 +85,22 @@ func printMetrics(metrics map[string]*ClusterMetric, cfgMap map[string]*MetricCo
 				default:
 					fmt.Printf("Unknown value type %v for %v\n", cfg.ValueType, k)
 				}
+				devValue := ""
+				for devName, devMetrics := range (*m)[inst].DeviceMetrics {
+					switch cfg.ValueType {
+					case ValueTypeCPU:
+						devValue = colorCPU(devMetrics)
+					case ValueTypeSize:
+						devValue = colorSize(bytefmt.ByteSize(uint64(devMetrics)))
+					default:
+						fmt.Printf("Unknown value type %v for %v\n", cfg.ValueType, k)
+					}
+					if mc[devName] == nil {
+						mc[devName] = map[string]string{}
+						mc[devName]["instance"] = devName
+					}
+					mc[devName][k] = devValue
+				}
 			} else {
 				switch cfg.ValueType {
 				case ValueTypeCPU:
@@ -78,10 +111,31 @@ func printMetrics(metrics map[string]*ClusterMetric, cfgMap map[string]*MetricCo
 					fmt.Printf("Unknown value type %v for %v\n", cfg.ValueType, k)
 				}
 			}
-			mc[k] = value
+			mc[MetricsOutputSummaryKey][k] = value
 		}
-		if err := outputTmpl.Execute(output, mc); err != nil {
+
+		if err := outputTmpl.Execute(output, mc[MetricsOutputSummaryKey]); err != nil {
 			fmt.Printf("failed to parse for instance %v\n", inst)
+		}
+		for _, dName := range instanceDeviceList[inst] {
+			for k, cfg := range cfgMap {
+				_, exists := mc[dName][k]
+				if !exists {
+					value := ""
+					switch cfg.ValueType {
+					case ValueTypeCPU:
+						value = fmt.Sprintf(ValueTypeCPUFormat, "")
+					case ValueTypeSize:
+						value = fmt.Sprintf(ValueTypeSizeFormat, "")
+					default:
+						fmt.Printf("Unknown value type %v for %v\n", cfg.ValueType, k)
+					}
+					mc[dName][cfg.Name] = value
+				}
+			}
+			if err := outputTmpl.Execute(output, mc[dName]); err != nil {
+				fmt.Printf("failed to parse for instance device %v\n", dName)
+			}
 		}
 	}
 
