@@ -1,0 +1,29 @@
+syntax="proto3";
+
+package pb.v1;
+
+service MetricsService {
+	rpc Watch(WatchRequest) returns (stream WatchResponse) {}
+	rpc GetMetrics(GetMetricsRequest) returns (GetMetricsResponse) {}
+}
+
+message WatchRequest {}
+
+message WatchResponse {}
+
+message GetMetricsRequest {}
+
+message GetMetricsResponse{
+	map<string, ClusterMetric> cluster_metrics= 1;
+}
+
+message ClusterMetric {
+	map<string, InstanceMetric> instance_metrics = 1;
+}
+
+message InstanceMetric {
+	map<string, int64> device_metrics = 1;
+	int64 total = 2;
+	int64 average = 3;
+	int64 value = 4;
+}

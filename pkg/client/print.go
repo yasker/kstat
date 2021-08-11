@@ -1,25 +1,26 @@
-package main
+package client
 
 import (
 	"fmt"
 	"sort"
 	"strings"
-	"text/template"
 
 	"code.cloudfoundry.org/bytefmt"
 	aurora "github.com/logrusorgru/aurora/v3"
 	"golang.org/x/crypto/ssh/terminal"
+
+	"github.com/yasker/kstat/pkg/types"
 )
 
 const (
 	MetricsOutputSummaryKey = "SUMMARY"
 )
 
-func printMetrics(metrics map[string]*ClusterMetric, cfgMap map[string]*MetricConfig, headerTmpl, outputTmpl *template.Template, lineCounter *int) {
+func (c *Client) printMetrics(metrics map[string]*types.ClusterMetric, lineCounter *int) {
 	instanceMap := map[string]map[string]struct{}{}
 
 	for _, mi := range metrics {
-		for inst, m := range *mi {
+		for inst, m := range mi.InstanceMetrics {
 			if instanceMap[inst] == nil {
 				instanceMap[inst] = map[string]struct{}{}
 			}
@@ -53,10 +54,10 @@ func printMetrics(metrics map[string]*ClusterMetric, cfgMap map[string]*MetricCo
 		hm := map[string]string{
 			"instance": "instance",
 		}
-		for k, c := range cfgMap {
+		for k, c := range c.metricFormatMap {
 			hm[k] = c.Shorthand
 		}
-		if err := headerTmpl.Execute(output, hm); err != nil {
+		if err := c.headerTemplate.Execute(output, hm); err != nil {
 			fmt.Printf("failed to parse for header\n")
 		}
 	}
@@ -70,28 +71,28 @@ func printMetrics(metrics map[string]*ClusterMetric, cfgMap map[string]*MetricCo
 		mc[MetricsOutputSummaryKey] = map[string]string{}
 		mc[MetricsOutputSummaryKey]["instance"] = inst
 		for k, m := range metrics {
-			cfg, exist := cfgMap[k]
+			cfg, exist := c.metricFormatMap[k]
 			if !exist {
 				fmt.Printf("BUG: shouldn't have undefined metric: %v\n", k)
 				continue
 			}
 			value := ""
-			if m != nil && (*m)[inst] != nil {
+			if m != nil && m.InstanceMetrics[inst] != nil {
 				switch cfg.ValueType {
-				case ValueTypeCPU:
-					value = colorCPU((*m)[inst].Average)
-				case ValueTypeSize:
-					value = colorSize(bytefmt.ByteSize(uint64((*m)[inst].Total)))
+				case types.ValueTypeCPU:
+					value = colorCPU(m.InstanceMetrics[inst].Average)
+				case types.ValueTypeSize:
+					value = colorSize(bytefmt.ByteSize(uint64(m.InstanceMetrics[inst].Total)))
 				default:
 					fmt.Printf("Unknown value type %v for %v\n", cfg.ValueType, k)
 				}
-				/*
+				if c.ShowDevices {
 					devValue := ""
-					for devName, devMetrics := range (*m)[inst].DeviceMetrics {
+					for devName, devMetrics := range m.InstanceMetrics[inst].DeviceMetrics {
 						switch cfg.ValueType {
-						case ValueTypeCPU:
+						case types.ValueTypeCPU:
 							devValue = colorCPU(devMetrics)
-						case ValueTypeSize:
+						case types.ValueTypeSize:
 							devValue = colorSize(bytefmt.ByteSize(uint64(devMetrics)))
 						default:
 							fmt.Printf("Unknown value type %v for %v\n", cfg.ValueType, k)
@@ -102,13 +103,13 @@ func printMetrics(metrics map[string]*ClusterMetric, cfgMap map[string]*MetricCo
 						}
 						mc[devName][k] = devValue
 					}
-				*/
+				}
 			} else {
 				switch cfg.ValueType {
-				case ValueTypeCPU:
-					value = colorNA(ValueTypeCPUFormat)
-				case ValueTypeSize:
-					value = colorNA(ValueTypeSizeFormat)
+				case types.ValueTypeCPU:
+					value = colorNA(types.ValueTypeCPUFormat)
+				case types.ValueTypeSize:
+					value = colorNA(types.ValueTypeSizeFormat)
 				default:
 					fmt.Printf("Unknown value type %v for %v\n", cfg.ValueType, k)
 				}
@@ -116,31 +117,31 @@ func printMetrics(metrics map[string]*ClusterMetric, cfgMap map[string]*MetricCo
 			mc[MetricsOutputSummaryKey][k] = value
 		}
 
-		if err := outputTmpl.Execute(output, mc[MetricsOutputSummaryKey]); err != nil {
+		if err := c.outputTemplate.Execute(output, mc[MetricsOutputSummaryKey]); err != nil {
 			fmt.Printf("failed to parse for instance %v\n", inst)
 		}
-		/*
+		if c.ShowDevices {
 			for _, dName := range instanceDeviceList[inst] {
-				for k, cfg := range cfgMap {
+				for k, cfg := range c.metricFormatMap {
 					_, exists := mc[dName][k]
 					if !exists {
 						value := ""
 						switch cfg.ValueType {
-						case ValueTypeCPU:
-							value = fmt.Sprintf(ValueTypeCPUFormat, "")
-						case ValueTypeSize:
-							value = fmt.Sprintf(ValueTypeSizeFormat, "")
+						case types.ValueTypeCPU:
+							value = fmt.Sprintf(types.ValueTypeCPUFormat, "")
+						case types.ValueTypeSize:
+							value = fmt.Sprintf(types.ValueTypeSizeFormat, "")
 						default:
 							fmt.Printf("Unknown value type %v for %v\n", cfg.ValueType, k)
 						}
 						mc[dName][cfg.Name] = value
 					}
 				}
-				if err := outputTmpl.Execute(output, mc[dName]); err != nil {
+				if err := c.outputTemplate.Execute(output, mc[dName]); err != nil {
 					fmt.Printf("failed to parse for instance device %v\n", dName)
 				}
 			}
-		*/
+		}
 	}
 
 	fmt.Print(output.String())

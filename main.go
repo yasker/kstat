@@ -3,83 +3,36 @@ package main
 import (
 	"flag"
 	"os"
-	"text/template"
-	"time"
 
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
-	"gopkg.in/yaml.v2"
 
-	promapi "github.com/prometheus/client_golang/api"
-	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
-	"github.com/prometheus/common/model"
-
+	"github.com/yasker/kstat/pkg/client"
+	"github.com/yasker/kstat/pkg/server"
 	"github.com/yasker/kstat/pkg/version"
 )
 
-// ClusterMetric use the instance name as the key
-type ClusterMetric map[string]*InstanceMetric
-
-type InstanceMetric struct {
-	// DeviceMetrics use the device name as the key
-	DeviceMetrics map[string]int64
-	Total         int64
-	Average       int64
-
-	// Value stores the metric value if there is no associated device
-	Value int64
-}
-
 const (
-	InstanceLabel = model.LabelName("instance")
-)
+	FlagListenAddress    = "listen"
+	FlagPrometheusServer = "prometheus-server"
+	FlagMetricConfigFile = "metrics-config"
 
-const (
-	ValueTypeCPU  = "cpu"
-	ValueTypeSize = "size"
-
-	ValueTypeCPUFormat  = "%5s"
-	ValueTypeSizeFormat = "%8s"
-)
-
-type MetricConfig struct {
-	Name        string `yaml:"name"`
-	DeviceLabel string `yaml:"device_label"`
-	QueryString string `yaml:"query_string"`
-
-	Scale        float64 `yaml:"scale"`
-	ValueType    string  `yaml:"value_type"`
-	Shorthand    string  `yaml:"shorthand"`
-	DevicePrefix string  `yaml:"device_prefix"`
-}
-
-const (
-	SampleInterval = "10s"
-)
-
-const (
-	FlagPrometheusServer   = "prometheus-server"
-	FlagMetricConfigFile   = "metrics-config"
+	FlagServer             = "server"
+	FlagMetricFormatFile   = "metrics-format"
 	FlagHeaderTemplateFile = "header-template"
 	FlagOutputTemplateFile = "output-template"
-)
-
-var (
-	ConfigCheckInterval = 30 * time.Second
-	ConfigCheckedAt     time.Time
-)
-
-var (
-	MetricConfigMap map[string]*MetricConfig
-	HeaderTemplate  *template.Template
-	OutputTemplate  *template.Template
+	FlagShowDevices        = "show-devices"
 )
 
 func ServerCmd() cli.Command {
 	return cli.Command{
 		Name: "server",
 		Flags: []cli.Flag{
+			cli.StringFlag{
+				Name:  FlagListenAddress,
+				Usage: "Listening address of the server",
+				Value: "localhost:9159",
+			},
 			cli.StringFlag{
 				Name:  FlagPrometheusServer,
 				Usage: "Specify the Prometheus Server address",
@@ -89,6 +42,29 @@ func ServerCmd() cli.Command {
 				Name:  FlagMetricConfigFile,
 				Usage: "Specify the metric config yaml",
 				Value: "metrics.yaml",
+			},
+		},
+		Action: func(c *cli.Context) {
+			if err := startServer(c); err != nil {
+				logrus.Fatalf("Error starting kstat server: %v", err)
+			}
+		},
+	}
+}
+
+func ClientCmd() cli.Command {
+	return cli.Command{
+		Name: "stat",
+		Flags: []cli.Flag{
+			cli.StringFlag{
+				Name:  FlagServer,
+				Usage: "Specify the kstat server",
+				Value: "localhost:9159",
+			},
+			cli.StringFlag{
+				Name:  FlagMetricFormatFile,
+				Usage: "Specify the metric format yaml",
+				Value: "metrics-format.yaml",
 			},
 			cli.StringFlag{
 				Name:  FlagHeaderTemplateFile,
@@ -100,10 +76,14 @@ func ServerCmd() cli.Command {
 				Usage: "Specify the output template file",
 				Value: "output.tmpl",
 			},
+			cli.BoolFlag{
+				Name:  FlagShowDevices,
+				Usage: "If show devices in the output",
+			},
 		},
 		Action: func(c *cli.Context) {
-			if err := startServer(c); err != nil {
-				logrus.Fatalf("Error starting kstat server: %v", err)
+			if err := stat(c); err != nil {
+				logrus.Fatalf("Error running stat: %v", err)
 			}
 		},
 	}
@@ -117,6 +97,7 @@ func main() {
 	app.Flags = []cli.Flag{}
 	app.Commands = []cli.Command{
 		ServerCmd(),
+		ClientCmd(),
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -127,76 +108,29 @@ func main() {
 func startServer(c *cli.Context) error {
 	flag.Parse()
 
-	server := c.String(FlagPrometheusServer)
-	client, err := promapi.NewClient(promapi.Config{
-		Address: server,
-	})
-	if err != nil {
-		return errors.Wrapf(err, "cannot start client for %s", server)
-	}
-
-	api := promv1.NewAPI(client)
-	pollInterval := 5 * time.Second
-
-	if err := testConnection(api); err != nil {
-		return errors.Wrapf(err, "cannot connecting to %s", server)
-
-	}
-
+	listenAddr := c.String(FlagListenAddress)
+	promServer := c.String(FlagPrometheusServer)
 	cfgFile := c.String(FlagMetricConfigFile)
-	headerTmplFile := c.String(FlagHeaderTemplateFile)
-	outputTmplFile := c.String(FlagOutputTemplateFile)
 
-	lineCounter := new(int)
-	*lineCounter = 0
-	for {
-		if time.Now().After(ConfigCheckedAt.Add(ConfigCheckInterval)) {
-			if err := reloadConfigFiles(cfgFile, headerTmplFile, outputTmplFile); err != nil {
-				logrus.Errorf("failed to reload the configuration files: %v", err)
-			}
-			ConfigCheckedAt = time.Now()
-		}
+	s := server.NewServer(listenAddr, promServer, cfgFile)
 
-		metrics, err := getMetrics(api, MetricConfigMap)
-		if err != nil {
-			logrus.Errorf("failed to complete metrics retrieval: %v", err)
-			*lineCounter++
-		} else {
-			printMetrics(metrics, MetricConfigMap, HeaderTemplate, OutputTemplate, lineCounter)
-		}
-
-		time.Sleep(pollInterval)
+	if err := s.Start(); err != nil {
+		return err
 	}
+
 	return nil
 }
 
-func reloadConfigFiles(cfgFile, headerTmplFile, outputTmplFile string) error {
-	var err error
+func stat(c *cli.Context) error {
+	serverAddr := c.String(FlagServer)
+	metricFormatFile := c.String(FlagMetricFormatFile)
+	headerTmplFile := c.String(FlagHeaderTemplateFile)
+	outputTmplFile := c.String(FlagOutputTemplateFile)
 
-	f, err := os.Open(cfgFile)
-	if err != nil {
-		return errors.Wrapf(err, "cannot open the metrics config file %v", cfgFile)
-	}
-	defer f.Close()
-
-	metricConfigs := []*MetricConfig{}
-
-	if err := yaml.NewDecoder(f).Decode(&metricConfigs); err != nil {
-		return errors.Wrapf(err, "cannot decode the metrics config file %v", cfgFile)
-	}
-	MetricConfigMap = map[string]*MetricConfig{}
-	for _, m := range metricConfigs {
-		MetricConfigMap[m.Name] = m
-	}
-
-	HeaderTemplate, err = template.ParseFiles(headerTmplFile)
-	if err != nil {
-		return errors.Wrapf(err, "cannot read or parse the header template file %v", headerTmplFile)
-	}
-
-	OutputTemplate, err = template.ParseFiles(outputTmplFile)
-	if err != nil {
-		return errors.Wrapf(err, "cannot read or parse the output template file %v", outputTmplFile)
+	client := client.NewClient(serverAddr, metricFormatFile, headerTmplFile, outputTmplFile)
+	client.ShowDevices = c.Bool(FlagShowDevices)
+	if err := client.Start(); err != nil {
+		return err
 	}
 	return nil
 }
