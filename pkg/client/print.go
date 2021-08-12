@@ -198,3 +198,8 @@ func needHeader(lineCounter *int) bool {
 	}
 	return false
 }
+
+func (c *Client) printTop(metrics map[string]*types.ClusterMetric) {
+	lineCounter := 0
+	c.printMetrics(metrics, &lineCounter)
+}

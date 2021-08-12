@@ -1,6 +1,7 @@
 package client
 
 import (
+	"fmt"
 	"os"
 	"sync"
 	"text/template"
@@ -32,6 +33,7 @@ type Client struct {
 	HeaderTemplateFile string
 	OutputTemplateFile string
 	ShowDevices        bool
+	ShowAsTop          bool
 
 	rwMutex         *sync.RWMutex
 	metricFormatMap map[string]*MetricFormat
@@ -53,6 +55,7 @@ func NewClient(serverAddr, metricFormatFile, headerTmplFile, outputTmplFile stri
 func (c *Client) Start() error {
 	lineCounter := new(int)
 	*lineCounter = 0
+
 	for {
 		if time.Now().After(ConfigCheckedAt.Add(types.ConfigCheckInterval)) {
 			if err := c.reloadTemplateFiles(); err != nil {
@@ -65,7 +68,12 @@ func (c *Client) Start() error {
 		if err != nil {
 			logrus.Errorf("Failed to get metrics from server %v", err)
 		} else {
-			c.printMetrics(metrics, lineCounter)
+			if !c.ShowAsTop {
+				c.printMetrics(metrics, lineCounter)
+			} else {
+				fmt.Print("\033[H\033[2J")
+				c.printTop(metrics)
+			}
 		}
 
 		time.Sleep(types.PollInterval)

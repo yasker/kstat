@@ -22,6 +22,7 @@ const (
 	FlagHeaderTemplateFile = "header-template"
 	FlagOutputTemplateFile = "output-template"
 	FlagShowDevices        = "show-devices"
+	FlagTop                = "top"
 )
 
 func ServerCmd() cli.Command {
@@ -52,7 +53,7 @@ func ServerCmd() cli.Command {
 	}
 }
 
-func ClientCmd() cli.Command {
+func StatCmd() cli.Command {
 	return cli.Command{
 		Name: "stat",
 		Flags: []cli.Flag{
@@ -80,6 +81,10 @@ func ClientCmd() cli.Command {
 				Name:  FlagShowDevices,
 				Usage: "If show devices in the output",
 			},
+			cli.BoolFlag{
+				Name:  FlagTop,
+				Usage: "Show in `top` style",
+			},
 		},
 		Action: func(c *cli.Context) {
 			if err := stat(c); err != nil {
@@ -97,7 +102,7 @@ func main() {
 	app.Flags = []cli.Flag{}
 	app.Commands = []cli.Command{
 		ServerCmd(),
-		ClientCmd(),
+		StatCmd(),
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -129,6 +134,7 @@ func stat(c *cli.Context) error {
 
 	client := client.NewClient(serverAddr, metricFormatFile, headerTmplFile, outputTmplFile)
 	client.ShowDevices = c.Bool(FlagShowDevices)
+	client.ShowAsTop = c.Bool(FlagTop)
 	if err := client.Start(); err != nil {
 		return err
 	}
