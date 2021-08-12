@@ -9,73 +9,83 @@ data:
       device_label: device
       query_string: rate(node_disk_read_bytes_total{job="node-exporter"}[10s])
       scale: 1
-      value_type: size
-      shorthand: read
       device_prefix: disk
     - name: disk_write
       device_label: device
       query_string: rate(node_disk_written_bytes_total{job="node-exporter"}[10s])
       scale: 1
-      value_type: size
-      shorthand: write
       device_prefix: disk
     - name: network_receive
       device_label: device
       query_string: rate(node_network_receive_bytes_total{job="node-exporter"}[10s])
       scale: 1
-      value_type: size
-      shorthand: recv
       device_prefix: nic
     - name: network_transmit
       device_label: device
       query_string: rate(node_network_transmit_bytes_total{job="node-exporter"}[10s])
       scale: 1
-      value_type: size
-      shorthand: send
       device_prefix: nic
     - name: cpu_user
       device_label: cpu
       query_string: rate(node_cpu_seconds_total{job="node-exporter", mode="user"}[10s])
       scale: 100
-      value_type: cpu
-      shorthand: usr
       device_prefix: cpu
     - name: cpu_system
       device_label: cpu
       query_string: rate(node_cpu_seconds_total{job="node-exporter", mode="system"}[10s])
       scale: 100
-      value_type: cpu
-      shorthand: sys
       device_prefix: cpu
     - name: cpu_idle
       device_label: cpu
       query_string: rate(node_cpu_seconds_total{job="node-exporter", mode="idle"}[10s])
       scale: 100
-      value_type: cpu
-      shorthand: idle
       device_prefix: cpu
     - name: cpu_wait
       device_label: cpu
       query_string: rate(node_cpu_seconds_total{job="node-exporter", mode="iowait"}[10s])
       scale: 100
-      value_type: cpu
-      shorthand: wait
       device_prefix: cpu
     - name: cpu_steal
       device_label: cpu
       query_string: rate(node_cpu_seconds_total{job="node-exporter", mode="steal"}[10s])
       scale: 100
-      value_type: cpu
-      shorthand: stl
       device_prefix: cpu
     - name: mem_avail
       device_label: ""
       query_string: node_memory_MemAvailable_bytes{job="node-exporter"}
       scale: 1
+      device_prefix: cpu
+  metrics-format.yaml: |
+    - name: disk_read
+      value_type: size
+      shorthand: read
+    - name: disk_write
+      value_type: size
+      shorthand: write
+    - name: network_receive
+      value_type: size
+      shorthand: recv
+    - name: network_transmit
+      value_type: size
+      shorthand: send
+    - name: cpu_user
+      value_type: cpu
+      shorthand: usr
+    - name: cpu_system
+      value_type: cpu
+      shorthand: sys
+    - name: cpu_idle
+      value_type: cpu
+      shorthand: idle
+    - name: cpu_wait
+      value_type: cpu
+      shorthand: wait
+    - name: cpu_steal
+      value_type: cpu
+      shorthand: stl
+    - name: mem_avail
       value_type: size
       shorthand: avail
-      device_prefix: cpu
-
   header.tmpl: |
     {{printf "%20s : %25s | %8s | %16s | %16s"
     "" "-----------cpu-----------" "--mem---" "------disk------" "-----network----"}}
