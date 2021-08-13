@@ -35,8 +35,10 @@ case $ARG in
         print_usage
         ;;
     install)
+	kubectl apply -f https://raw.githubusercontent.com/yasker/kstat/main/kstat.yaml
 	;;
     uninstall)
+	kubectl delete -f https://raw.githubusercontent.com/yasker/kstat/main/kstat.yaml
 	;;
     top)
 	shift
