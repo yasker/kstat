@@ -17,12 +17,4 @@ fi
 docker build -f ${DOCKERFILE} -t ${IMAGE} .
 echo Built ${IMAGE}
 
-files=`find ./deploy/ |grep yaml |sort`
-rm -f ./dist/kstat.yaml
-for f in $files
-do
-	echo $f
-	cat $f >> ./dist/kstat.yaml
-	echo --- >> ./dist/kstat.yaml
-done
-echo Updated kstat.yaml
+echo ${IMAGE} > bin/latest_image

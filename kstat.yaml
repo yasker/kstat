@@ -1,0 +1,457 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kstat-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kstat-service-account
+  namespace: kstat-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kstat-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "nodes", "nodes/metrics", "services", "endpoints", "configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs: ["get", "list", "watch"]
+- nonResourceURLs: ["/metrics", "/metrics/cadvisor"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kstat-bind
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kstat-role
+subjects:
+- kind: ServiceAccount
+  name: kstat-service-account
+  namespace: kstat-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kstat-node-exporter
+  namespace: kstat-system
+spec:
+  ports:
+  - name: metrics
+    port: 9095
+    protocol: TCP
+    targetPort: 9095
+  selector:
+    app: kstat-node-exporter
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: kstat-node-exporter
+  name: kstat-node-exporter
+  namespace: kstat-system
+spec:
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: kstat-node-exporter
+  template:
+    metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+      labels:
+        app: kstat-node-exporter
+    spec:
+      containers:
+      - args:
+        - --path.procfs=/host/proc
+        - --path.sysfs=/host/sys
+        - --path.rootfs=/host/root
+        - --web.listen-address=$(HOST_IP):9095
+        - --collector.filesystem.ignored-mount-points=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
+        - --collector.filesystem.ignored-fs-types=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$
+        env:
+        - name: HOST_IP
+          value: 0.0.0.0
+        image: prom/node-exporter:v1.2.1
+        imagePullPolicy: IfNotPresent
+        name: node-exporter
+        ports:
+        - containerPort: 9095
+          hostPort: 9095
+          name: metrics
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 9095
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 9095
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: 200m
+            memory: 50Mi
+          requests:
+            cpu: 100m
+            memory: 30Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /host/proc
+          name: proc
+          readOnly: true
+        - mountPath: /host/sys
+          name: sys
+          readOnly: true
+        - mountPath: /host/root
+          mountPropagation: HostToContainer
+          name: root
+          readOnly: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: true
+      hostPID: true
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 65534
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+      terminationGracePeriodSeconds: 30
+      tolerations:
+      - effect: NoSchedule
+        operator: Exists
+      - effect: NoExecute
+        operator: Exists
+      volumes:
+      - hostPath:
+          path: /proc
+          type: ""
+        name: proc
+      - hostPath:
+          path: /sys
+          type: ""
+        name: sys
+      - hostPath:
+          path: /
+          type: ""
+        name: root
+  updateStrategy:
+    rollingUpdate:
+      maxUnavailable: 1
+    type: RollingUpdate
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kstat-prometheus-configmap
+  namespace: kstat-system
+data:
+  prometheus.yml: |-
+    ---
+    global:
+      scrape_interval: 5s
+
+    scrape_configs:
+    - job_name: node-exporter
+      #- targets: ["144.126.214.177:9095","144.126.214.226:9095","144.126.222.20:9095"]
+      kubernetes_sd_configs:
+      - role: endpoints
+        namespaces:
+          names:
+          - kstat-system
+      relabel_configs:
+      - source_labels:
+        - __meta_kubernetes_endpoint_node_name
+        action: replace
+        target_label: instance
+    - job_name: 'kubernetes-cadvisor'
+      scheme: https
+      metrics_path: /metrics/cadvisor
+      kubernetes_sd_configs:
+      - role: node
+      tls_config:
+        ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        insecure_skip_verify: true
+      authorization:
+        credentials_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+      relabel_configs:
+      - source_labels:
+        - __meta_kubernetes_namespace
+        target_label: namespace
+      - source_labels:
+        - __meta_kubernetes_service_name
+        target_label: service
+      - source_labels:
+        - __meta_kubernetes_pod_name
+        target_label: pod
+      - source_labels:
+        - __meta_kubernetes_pod_container_name
+        target_label: container
+      - source_labels:
+        - __meta_kubernetes_service_name
+        target_label: job
+        replacement: ${1}
+      - target_label: endpoint
+        replacement: https-metrics
+      - source_labels:
+        - __metrics_path__
+        target_label: metrics_path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-service
+  namespace: kstat-system
+spec:
+  ports:
+  - name: metrics
+    port: 9090
+    protocol: TCP
+    targetPort: 9090
+  selector:
+    app: kstat-prometheus
+    #type: ClusterIP
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  labels:
+    app: kstat-prometheus
+  namespace: kstat-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kstat-prometheus
+  template:
+    metadata:
+      labels:
+        app: kstat-prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.28.1
+        volumeMounts:
+        - name: prom-config
+          mountPath: /etc/prometheus/
+        - name: prom-data
+          mountPath: /data/
+        command:
+        - prometheus
+        - --storage.tsdb.path
+        - /data/
+        - --storage.tsdb.retention.size
+        - 100MB
+        - --config.file
+        - /etc/prometheus/prometheus.yml
+        - --web.enable-lifecycle
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 500Mi
+          requests:
+            cpu: 500m
+            memory: 300Mi
+      - name: config-reloader
+        command:
+        - /bin/prometheus-config-reloader
+        - --watch-interval=10s
+        - --reload-url=http://127.0.0.1:9090/-/reload
+        - --config-file=/etc/prometheus/prometheus.yml
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        image: ghcr.io/prometheus-operator/prometheus-config-reloader:v0.49.0
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+        - name: prom-config
+          mountPath: /etc/prometheus/
+        ports:
+        resources:
+          limits:
+            cpu: 100m
+            memory: 50Mi
+          requests:
+            cpu: 100m
+            memory: 50Mi
+      restartPolicy: Always
+      volumes:
+      - name: prom-config
+        configMap:
+          name: kstat-prometheus-configmap
+      - name: prom-data
+        emptyDir: {}
+      serviceAccountName: kstat-service-account
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kstat-configmap
+  namespace: kstat-system
+data:
+  metrics.yaml: |
+    - name: disk_read
+      device_label: device
+      query_string: rate(node_disk_read_bytes_total{job="node-exporter"}[10s])
+      scale: 1
+      device_prefix: disk
+    - name: disk_write
+      device_label: device
+      query_string: rate(node_disk_written_bytes_total{job="node-exporter"}[10s])
+      scale: 1
+      device_prefix: disk
+    - name: network_receive
+      device_label: device
+      query_string: rate(node_network_receive_bytes_total{job="node-exporter", device!~"^cali.*", device!~"^docker.*"}[10s])
+      scale: 1
+      device_prefix: nic
+    - name: network_transmit
+      device_label: device
+      query_string: rate(node_network_transmit_bytes_total{job="node-exporter", device!~"^cali.*", device!~"^docker.*"}[10s])
+      scale: 1
+      device_prefix: nic
+    - name: cpu_user
+      device_label: cpu
+      query_string: rate(node_cpu_seconds_total{job="node-exporter", mode="user"}[10s])
+      scale: 100
+      device_prefix: cpu
+    - name: cpu_system
+      device_label: cpu
+      query_string: rate(node_cpu_seconds_total{job="node-exporter", mode="system"}[10s])
+      scale: 100
+      device_prefix: cpu
+    - name: cpu_idle
+      device_label: cpu
+      query_string: rate(node_cpu_seconds_total{job="node-exporter", mode="idle"}[10s])
+      scale: 100
+      device_prefix: cpu
+    - name: cpu_wait
+      device_label: cpu
+      query_string: rate(node_cpu_seconds_total{job="node-exporter", mode="iowait"}[10s])
+      scale: 100
+      device_prefix: cpu
+    - name: cpu_steal
+      device_label: cpu
+      query_string: rate(node_cpu_seconds_total{job="node-exporter", mode="steal"}[10s])
+      scale: 100
+      device_prefix: cpu
+    - name: mem_avail
+      device_label: ""
+      query_string: node_memory_MemAvailable_bytes{job="node-exporter"}
+      scale: 1
+      device_prefix: cpu
+  metrics-format.yaml: |
+    - name: disk_read
+      value_type: size
+      shorthand: read
+    - name: disk_write
+      value_type: size
+      shorthand: write
+    - name: network_receive
+      value_type: size
+      shorthand: recv
+    - name: network_transmit
+      value_type: size
+      shorthand: send
+    - name: cpu_user
+      value_type: cpu
+      shorthand: usr
+    - name: cpu_system
+      value_type: cpu
+      shorthand: sys
+    - name: cpu_idle
+      value_type: cpu
+      shorthand: idle
+    - name: cpu_wait
+      value_type: cpu
+      shorthand: wait
+    - name: cpu_steal
+      value_type: cpu
+      shorthand: stl
+    - name: mem_avail
+      value_type: size
+      shorthand: avail
+  header.tmpl: |
+    {{printf "%20s : %25s | %8s | %16s | %16s"
+    "" "-----------cpu-----------" "--mem---" "------disk------" "-----network----"}}
+    {{printf "%20s : %5s%5s%5s%5s%5s | %8s | %8s%8s | %8s%8s"
+    .instance
+    .cpu_user .cpu_system .cpu_idle .cpu_wait .cpu_steal
+    .mem_avail
+    .disk_read .disk_write
+    .network_receive .network_transmit}}
+  output.tmpl: |
+    {{
+    printf "%20s : %s%s%s%s%s | %s | %s%s | %s%s"
+    .instance
+    .cpu_user .cpu_system .cpu_idle .cpu_wait .cpu_steal
+    .mem_avail
+    .disk_read .disk_write
+    .network_receive .network_transmit
+    }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kstat
+  labels:
+    app: kstat
+  namespace: kstat-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kstat
+  template:
+    metadata:
+      labels:
+        app: kstat
+    spec:
+      containers:
+      - name: kstat
+        #image: yasker/kstat:latest
+        image: yasker/kstat:dev
+        imagePullPolicy: Always
+        command:
+        - kstat
+        - server
+        - --prometheus-server
+        - http://prometheus-service:9090
+        - --metrics-config
+        - /etc/kstat/metrics.yaml
+        volumeMounts:
+        - name: kstat-config
+          mountPath: /etc/kstat/
+      restartPolicy: Always
+      volumes:
+      - name: kstat-config
+        configMap:
+          name: kstat-configmap
+---
