@@ -17,12 +17,12 @@ data:
       device_prefix: disk
     - name: network_receive
       device_label: device
-      query_string: rate(node_network_receive_bytes_total{job="node-exporter"}[10s])
+      query_string: rate(node_network_receive_bytes_total{job="node-exporter", device!~"^cali.*", device!~"^docker.*"}[10s])
       scale: 1
       device_prefix: nic
     - name: network_transmit
       device_label: device
-      query_string: rate(node_network_transmit_bytes_total{job="node-exporter"}[10s])
+      query_string: rate(node_network_transmit_bytes_total{job="node-exporter", device!~"^cali.*", device!~"^docker.*"}[10s])
       scale: 1
       device_prefix: nic
     - name: cpu_user

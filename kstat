@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+NS="kstat-system"
+SELECTOR="app=kstat"
+
+print_usage() {
+    echo "Usage: ${0} [|-h|--help] <arguments>"
+    echo ""
+    echo "Examples:"
+    echo "  ${0}"
+    echo "  ${0} --show-devices --top"
+    echo ""
+    echo "Note: Must have KStat installed in "kstat-system" namespace and have access to "kubectl" and the namespace"
+    echo ""
+    exit 0
+}
+
+exec_command() {
+    COMMAND_ARGS="${@}"
+
+    KSTAT_POD_NAME=`kubectl -n ${NS} get pod -l ${SELECTOR} --output=jsonpath={.items[0].metadata.name}`
+
+    kubectl -n ${NS} exec -it ${KSTAT_POD_NAME} -- sh -c \
+	    "kstat stat \
+	           --metrics-format /etc/kstat/metrics-format.yaml \
+		   --header-template /etc/kstat/header.tmpl \
+	           --output-template /etc/kstat/output.tmpl \
+		   ${COMMAND_ARGS}"
+}
+
+
+ARG=$1
+case $ARG in
+     "-h" | "--help")
+        print_usage
+        ;;
+    install)
+	;;
+    uninstall)
+	;;
+    top)
+	shift
+        exec_command --top ${@}
+	;;
+    *)
+        exec_command ${@}
+        ;;
+esac

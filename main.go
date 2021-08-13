@@ -42,7 +42,7 @@ func ServerCmd() cli.Command {
 			cli.StringFlag{
 				Name:  FlagMetricConfigFile,
 				Usage: "Specify the metric config yaml",
-				Value: "metrics.yaml",
+				Value: "cfg/metrics.yaml",
 			},
 		},
 		Action: func(c *cli.Context) {
@@ -65,17 +65,17 @@ func StatCmd() cli.Command {
 			cli.StringFlag{
 				Name:  FlagMetricFormatFile,
 				Usage: "Specify the metric format yaml",
-				Value: "metrics-format.yaml",
+				Value: "cfg/metrics-format.yaml",
 			},
 			cli.StringFlag{
 				Name:  FlagHeaderTemplateFile,
 				Usage: "Specify the header template file",
-				Value: "header.tmpl",
+				Value: "cfg/header.tmpl",
 			},
 			cli.StringFlag{
 				Name:  FlagOutputTemplateFile,
 				Usage: "Specify the output template file",
-				Value: "output.tmpl",
+				Value: "cfg/output.tmpl",
 			},
 			cli.BoolFlag{
 				Name:  FlagShowDevices,
